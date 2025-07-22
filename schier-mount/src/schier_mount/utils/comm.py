@@ -46,7 +46,7 @@ class Comm:
 
     async def set_track_sidereal(self, sidereal_encoder_rate = 100, flipped = False):
         sidereal_encoder_rate = -1 * sidereal_encoder_rate if flipped else sidereal_encoder_rate
-        await self.send_commands(["$StopRA", "$StopDec", f"$VelRa {sidereal_encoder_rate}", f"$VelDec {0}", "$RunRA", "$RunDec"])
+        await self.send_commands(["$StopRA", "$StopDec", f"$VelRa {sidereal_encoder_rate}", f"$VelDec {0}", "$RunRA"])
 
     async def send_commands(self, commands: Union[str, List[str]]) -> Union[str, List[str]]:
         """Sends the command with CRC over the serial port."""

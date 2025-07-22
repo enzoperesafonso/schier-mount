@@ -122,18 +122,15 @@ class SchierMountPointing:
         """
         Convert declination in degrees to encoder position.
         Based on your specifications:
-        - Dec positive limit: 122° from SCP (northward)
-        - Dec negative limit: 113° from SCP (southward)
-        - Total angular range: 235°
+        - Dec positive limit: 122° from SCP = -32° declination
+        - Dec negative limit: 113° from SCP = -23° declination
         """
         if not self._calibration_data['calibrated']:
             raise ValueError("Telescope not calibrated!")
 
-        # Calculate actual declination limits from SCP distances
-        # SCP is at -90° declination
-        dec_positive_limit = -90.0 + 122.0  # +32° declination (northward)
-        dec_negative_limit = -90.0 - 113.0  # -203° declination (southward, but clamp to -90°)
-        dec_negative_limit = max(dec_negative_limit, -90.0)  # Can't go past south pole
+        # Calculate actual declination limits
+        dec_positive_limit = -(90.0 - 122.0)  # -32°
+        dec_negative_limit = -(90.0 - 113.0)  # -23°
 
         # Clamp input declination to valid range
         dec_degrees = max(dec_negative_limit, min(dec_positive_limit, dec_degrees))
@@ -143,7 +140,7 @@ class SchierMountPointing:
         dec_range = dec_max - dec_min
 
         # Map declination range to encoder range
-        dec_span = dec_positive_limit - dec_negative_limit
+        dec_span = dec_positive_limit - dec_negative_limit  # 9°
         relative_dec = dec_degrees - dec_negative_limit
 
         encoder_value = dec_min + (relative_dec / dec_span) * dec_range
@@ -152,17 +149,13 @@ class SchierMountPointing:
     def _encoder_to_dec_degrees(self, dec_encoder: int) -> float:
         """
         Convert encoder value to declination in degrees.
-        Based on angular distances from South Celestial Pole:
-        - Positive limit: 122° from SCP = +32° declination
-        - Negative limit: 113° from SCP = -90° declination (clamped at south pole)
         """
         if not self._calibration_data['calibrated']:
             raise ValueError("Telescope not calibrated!")
 
-        # Calculate actual declination limits from SCP distances
-        dec_positive_limit = -90.0 + 122.0  # +32° declination
-        dec_negative_limit = -90.0 - 113.0  # -203° but clamped to -90°
-        dec_negative_limit = max(dec_negative_limit, -90.0)
+        # Calculate actual declination limits
+        dec_positive_limit = -(90.0 - 122.0)  # -32°
+        dec_negative_limit = -(90.0 - 113.0)  # -23°
 
         dec_min = self._calibration_data['limits']['dec_negative']
         dec_max = self._calibration_data['limits']['dec_positive']
@@ -173,7 +166,7 @@ class SchierMountPointing:
 
         # Convert encoder position to declination
         encoder_offset = dec_encoder - dec_min
-        dec_span = dec_positive_limit - dec_negative_limit
+        dec_span = dec_positive_limit - dec_negative_limit  # 9°
 
         declination = dec_negative_limit + (encoder_offset / dec_range) * dec_span
 
@@ -211,9 +204,9 @@ class SchierMountPointing:
         if not self._calibration_data['calibrated']:
             return {"calibrated": False}
 
-        # Calculate declination limits from SCP distances
-        dec_positive_limit = -90.0 + 122.0  # +32°
-        dec_negative_limit = max(-90.0 - 113.0, -90.0)  # -90° (clamped at south pole)
+        # Calculate declination limits
+        dec_positive_limit = -(90.0 - 122.0)  # -32°
+        dec_negative_limit = -(90.0 - 113.0)  # -23°
 
         return {
             "calibrated": True,
@@ -223,8 +216,7 @@ class SchierMountPointing:
             },
             "dec_limits": {
                 "negative_degrees": dec_negative_limit,
-                "positive_degrees": dec_positive_limit,
-                "total_angular_range": 235.0  # 122° + 113°
+                "positive_degrees": dec_positive_limit
             },
             "current_tracking_sides": {
                 "ha_side": self.ha_tracking_side,
