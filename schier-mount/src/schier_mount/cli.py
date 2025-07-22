@@ -59,7 +59,7 @@ class TelescopeController:
         self.config = self.load_config()
 
         # Initialize communication (replace MockComm with your actual comm class)
-        self.comm = Comm # MockComm()
+        self.comm = Comm() # MockComm()
 
         # Initialize calibration
         self.calibration = Calibration(
