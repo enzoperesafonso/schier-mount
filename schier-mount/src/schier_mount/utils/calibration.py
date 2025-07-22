@@ -14,8 +14,8 @@ class CalibrationStatus(Enum):
 
 class CalibrationPhase(Enum):
     IDLE = "idle"
-    FINDING_HA_NEG = "finding_ra_negative"
-    FINDING_HA_POS = "finding_ra_positive"
+    FINDING_HA_NEG = "finding_ha_negative"  # Fixed typo
+    FINDING_HA_POS = "finding_ha_positive"
     FINDING_DEC_NEG = "finding_dec_negative"
     FINDING_DEC_POS = "finding_dec_positive"
     COMPLETE = "complete"
@@ -31,17 +31,19 @@ class CalibrationProgress:
 
 
 class Calibration:
-    """Calibration class for telescope."""
+    """Calibration class for fork-mounted equatorial telescope."""
 
-    def __init__(self, comm):
+    def __init__(self, comm, observatory_latitude: float = -22.9):  # Default to Namibia
         """
         Initialize calibration module.
 
         Args:
             comm: Object with async methods: get_encoder_positions(),
-                           move_ha(), move_dec(), move(), stop(), set_velocity()
+                           move_ra_enc(), move_dec_enc(), move_enc(), stop(), set_velocity()
+            observatory_latitude: Observatory latitude in degrees
         """
         self.mount = comm
+        self.observatory_latitude = observatory_latitude
 
         self._calibration_data = {
             'limits': {'ra_negative': None, 'ra_positive': None,
@@ -49,8 +51,9 @@ class Calibration:
             'ranges': {'ra_encoder_range': None, 'dec_encoder_range': None},
             'calibrated': False,
             'calibration_date': None,
-            'home_ha': None,
-            'home_dec': None
+            'home_ra': None,
+            'home_dec': None,
+            'observatory_latitude': observatory_latitude
         }
 
         self._status = CalibrationStatus.NOT_STARTED
@@ -146,14 +149,14 @@ class Calibration:
         extreme_pos = 15000000 if direction == 'positive' else -15000000
 
         if axis.upper() == 'RA':
-            await self.mount.move_ha(extreme_pos)
+            await self.mount.move_ra_enc(extreme_pos)  # Fixed method name
         else:
-            await self.mount.move_dec(extreme_pos)
+            await self.mount.move_dec_enc(extreme_pos)  # Fixed method name
 
         # Wait for motion to stop (should hit limit)
         if await self.wait_for_motion_stop(axis):
-            ha_enc, dec_enc = await self.mount.get_encoder_positions()
-            limit_pos = ha_enc if axis.upper() == 'RA' else dec_enc
+            ra_enc, dec_enc = await self.mount.get_encoder_positions()
+            limit_pos = ra_enc if axis.upper() == 'RA' else dec_enc
             return limit_pos
         else:
             await self.mount.stop()
@@ -190,7 +193,7 @@ class Calibration:
             await self.mount.set_velocity(60000, 60000)
             await asyncio.sleep(2)
 
-            # Find HA negative limit
+            # Find RA negative limit (west limit, -6 hours HA)
             self._phase = CalibrationPhase.FINDING_HA_NEG
             self._progress = 15.0
             update_progress()
@@ -198,7 +201,7 @@ class Calibration:
             self._calibration_data['limits']['ra_negative'] = await self.find_limit('negative', 'RA')
             await asyncio.sleep(3)
 
-            # Find HA positive limit
+            # Find RA positive limit (east limit, +6 hours HA)
             self._phase = CalibrationPhase.FINDING_HA_POS
             self._progress = 35.0
             update_progress()
@@ -206,20 +209,20 @@ class Calibration:
             self._calibration_data['limits']['ra_positive'] = await self.find_limit('positive', 'RA')
             await asyncio.sleep(3)
 
-            # Find Dec negative limit (nadir)
+            # Find Dec negative limit (113° from SCP - southern limit)
             self._phase = CalibrationPhase.FINDING_DEC_NEG
             self._progress = 55.0
             update_progress()
 
-            self._calibration_data['limits']['dec_negative'] = await self.find_limit('positive', 'Dec')
+            self._calibration_data['limits']['dec_negative'] = await self.find_limit('negative', 'DEC')
             await asyncio.sleep(3)
 
-            # Find Dec positive limit (zenith)
+            # Find Dec positive limit (122° from SCP - northern limit)
             self._phase = CalibrationPhase.FINDING_DEC_POS
             self._progress = 75.0
             update_progress()
 
-            self._calibration_data['limits']['dec_positive'] = await self.find_limit('negative', 'Dec')
+            self._calibration_data['limits']['dec_positive'] = await self.find_limit('positive', 'DEC')
 
             # Calculate ranges and home positions
             ra_range = (self._calibration_data['limits']['ra_positive'] -
@@ -239,6 +242,7 @@ class Calibration:
                 },
                 'home_ra': ra_center,
                 'home_dec': dec_center,
+                'calibration_date': datetime.now().isoformat()
             })
 
             # Mark as calibrated
@@ -260,7 +264,6 @@ class Calibration:
             await self.mount.stop()
             raise RuntimeError(f"Calibration failed: {e}")
 
-
     def get_limits_summary(self) -> Dict[str, any]:
         """Get summary of calibration limits and ranges."""
         if not self.is_calibrated:
@@ -269,22 +272,32 @@ class Calibration:
         limits = self._calibration_data['limits']
         ranges = self._calibration_data['ranges']
 
+        # Calculate actual declination limits based on your specifications
+        # Dec positive (north): 122° from SCP = -90° + 122° = +32°
+        # Dec negative (south): 113° from SCP = -90° - 113° = -203° (clamped to -90°)
+        dec_positive_degrees = -90.0 + 122.0  # +32°
+        dec_negative_degrees = max(-90.0 - 113.0, -90.0)  # -90° (south pole limit)
+
         return {
             "calibrated": True,
             "ra_range_steps": ranges['ra_encoder_range'],
             "dec_range_steps": ranges['dec_encoder_range'],
             "ra_limits": {
-                "negative_hours": limits['ra_negative'],
-                "positive_hours": limits['ra_positive']
+                "negative_hours": -6.0,  # West limit
+                "positive_hours": 6.0,   # East limit
+                "negative_encoder": limits['ra_negative'],
+                "positive_encoder": limits['ra_positive']
             },
             "dec_limits": {
-                "negative_nadir": limits['dec_negative'],
-                "positive_zenith": limits['dec_positive']
+                "negative_degrees": dec_negative_degrees,  # Southern limit
+                "positive_degrees": dec_positive_degrees,  # Northern limit
+                "negative_encoder": limits['dec_negative'],
+                "positive_encoder": limits['dec_positive'],
+                "angular_range_from_scp": 235.0  # 122° + 113°
             },
             "home_position": {
                 "ra_encoder": self._calibration_data['home_ra'],
                 "dec_encoder": self._calibration_data['home_dec']
             },
+            "observatory_latitude": self.observatory_latitude
         }
-
-
