@@ -8,5 +8,3 @@ cal = Calibration(comm)
 
 cal.calibrate()
 
-
-cal.save_config_yaml("calibration.yaml")
