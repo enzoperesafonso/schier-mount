@@ -38,10 +38,10 @@ class CalibrationConfig:
     extreme_position: int = 15000000
     dec_total_range_degrees: float = 235.0  # 122° + 113°
     ra_total_range_hours: float = 12.0  # ±6 hours
-    fast_velocity: int = 60000
-    slow_velocity: int = 5000
-    home_velocity: int = 60000
-    positioning_velocity: int = 50000
+    fast_velocity: int = 40000
+    slow_velocity: int = 40000
+    home_velocity: int = 40000
+    positioning_velocity: int = 40000
     min_expected_range: int = 1000  # Minimum reasonable encoder range
     # New fields for config output
     sidereal_rate: int = 100  # encoder steps per second
