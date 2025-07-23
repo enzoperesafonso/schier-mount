@@ -4,6 +4,8 @@ from datetime import datetime
 from typing import Dict, Tuple, Optional, Callable
 from enum import Enum
 from dataclasses import dataclass
+import yaml
+import json
 
 logger = logging.getLogger(__name__)
 
@@ -41,6 +43,10 @@ class CalibrationConfig:
     home_velocity: int = 65000
     positioning_velocity: int = 50000
     min_expected_range: int = 1000  # Minimum reasonable encoder range
+    # New fields for config output
+    sidereal_rate: int = 100  # encoder steps per second
+    slew_speed: int = 5000  # max slew speed for telescope goto
+    limits_safety_buffer: int = 100  # safety buffer around hardstops
 
 
 @dataclass
@@ -369,6 +375,156 @@ class Calibration:
             await self.mount.stop()
             raise CalibrationError(error_msg) from e
 
+    def get_config_data(self) -> Dict:
+        """Generate configuration data in the format you specified."""
+        if not self.is_calibrated:
+            raise CalibrationError("Cannot generate config data - telescope not calibrated")
+
+        limits = self._calibration_data['limits']
+        ranges = self._calibration_data['ranges']
+
+        config_data = {
+            # Overall calibration status
+            'calibrated': True,
+
+            # Date of calibration
+            'calibration_date': self._calibration_data['calibration_date'],
+
+            # Sidereal tracking speed in encoder steps / second
+            'sidereal_rate': self.config.sidereal_rate,
+
+            # Max slew speed for telescope goto
+            'slew_speed': self.config.slew_speed,
+
+            # Number of steps we define as a safety buffer around all encoder hardstops
+            'limits_safety_buffer': self.config.limits_safety_buffer,
+
+            # Encoder limits (raw encoder counts)
+            'limits': {
+                # RA axis encoder limits (±6 hours of movement)
+                'ra_negative': limits['ra_negative'],  # Encoder count at HA = -6 hours
+                'ra_positive': limits['ra_positive'],  # Encoder count at HA = +6 hours
+
+                # Dec axis encoder limits
+                'dec_negative': limits['dec_negative'],  # Encoder count at minimum declination
+                'dec_positive': limits['dec_positive'],  # Encoder count at maximum declination
+            },
+
+            # Calculated ranges from limits
+            'ranges': {
+                'ra_encoder_range': ranges['ra_encoder_range'],  # ra_positive - ra_negative
+                'dec_encoder_range': ranges['dec_encoder_range'],  # dec_positive - dec_negative
+            },
+
+            # Declination mechanical limits in degrees
+            'dec_limits': {
+                # HARDCODED DO NOT TOUCH: mount maps from +122 to -113 where 122 is the + pointing direction
+                'positive_degrees': 122.0,  # Maximum mechanical declination
+                'negative_degrees': -113.0,  # Minimum mechanical declination
+                'dec_angular_range': 235.0,  # Total angular range (122 - (-113))
+            },
+        }
+
+        return config_data
+
+    def save_config_yaml(self, filepath: str):
+        """Save calibration configuration to YAML file."""
+        if not self.is_calibrated:
+            raise CalibrationError("Cannot save config - telescope not calibrated")
+
+        config_data = self.get_config_data()
+
+        # Add comments to the YAML output
+        yaml_content = f"""# Telescope Calibration Configuration
+# Generated on: {datetime.now().isoformat()}
+# 
+# This file contains the calibration data for the telescope mount
+# DO NOT EDIT MANUALLY unless you know what you're doing
+
+# Overall calibration status
+calibrated: {config_data['calibrated']}
+
+# Date of calibration
+calibration_date: '{config_data['calibration_date']}'
+
+# Sidereal tracking speed in encoder steps / second
+sidereal_rate: {config_data['sidereal_rate']}
+
+# Max slew speed for telescope goto
+slew_speed: {config_data['slew_speed']}
+
+# Number of steps we define as a safety buffer around all encoder hardstops
+limits_safety_buffer: {config_data['limits_safety_buffer']}
+
+# Encoder limits (raw encoder counts)
+limits:
+  # RA axis encoder limits (±6 hours of movement)
+  ra_negative: {config_data['limits']['ra_negative']}  # Encoder count at HA = -6 hours
+  ra_positive: {config_data['limits']['ra_positive']}  # Encoder count at HA = +6 hours
+
+  # Dec axis encoder limits
+  dec_negative: {config_data['limits']['dec_negative']}  # Encoder count at minimum declination
+  dec_positive: {config_data['limits']['dec_positive']}  # Encoder count at maximum declination
+
+# Calculated ranges from limits
+ranges:
+  ra_encoder_range: {config_data['ranges']['ra_encoder_range']}  # ra_positive - ra_negative
+  dec_encoder_range: {config_data['ranges']['dec_encoder_range']}  # dec_positive - dec_negative
+
+# Declination mechanical limits in degrees
+dec_limits:
+  # HARDCODED DO NOT TOUCH: mount maps from +122 to -113 where 122 is the + pointing direction
+  positive_degrees: 122.0  # Maximum mechanical declination
+  negative_degrees: -113.0  # Minimum mechanical declination
+  dec_angular_range: 235.0  # Total angular range (122 - (-113))
+"""
+
+        with open(filepath, 'w') as f:
+            f.write(yaml_content)
+
+        logger.info(f"Configuration saved to {filepath}")
+
+    def load_config_yaml(self, filepath: str):
+        """Load calibration configuration from YAML file."""
+        try:
+            with open(filepath, 'r') as f:
+                config_data = yaml.safe_load(f)
+
+            # Validate loaded data has required fields
+            required_fields = ['calibrated', 'limits', 'ranges']
+            for field in required_fields:
+                if field not in config_data:
+                    raise CalibrationError(f"Invalid config file: missing {field}")
+
+            # Convert back to internal format
+            self._calibration_data = {
+                'limits': config_data['limits'],
+                'ranges': config_data['ranges'],
+                'conversions': {
+                    'dec_degrees_per_step': self.config.dec_total_range_degrees / config_data['ranges'][
+                        'dec_encoder_range'],
+                    'ra_hours_per_step': self.config.ra_total_range_hours / config_data['ranges']['ra_encoder_range'],
+                },
+                'calibrated': config_data['calibrated'],
+                'calibration_date': config_data.get('calibration_date'),
+                'config_used': self.config
+            }
+
+            if config_data['calibrated']:
+                self._status = CalibrationStatus.COMPLETED
+                self._phase = CalibrationPhase.COMPLETE
+                self._progress = 100.0
+                self._current_operation = "Loaded from YAML file"
+
+            logger.info(f"Configuration loaded from {filepath}")
+
+        except FileNotFoundError:
+            raise CalibrationError(f"Config file not found: {filepath}")
+        except yaml.YAMLError:
+            raise CalibrationError(f"Invalid YAML in config file: {filepath}")
+        except Exception as e:
+            raise CalibrationError(f"Error loading config file: {e}")
+
     def get_limits_summary(self) -> Dict[str, any]:
         """Get summary of calibration limits and ranges."""
         if not self.is_calibrated:
@@ -380,7 +536,7 @@ class Calibration:
 
         # Calculate actual declination limits based on configuration
         dec_north_limit_degrees = 122.0  # From SCP
-        dec_south_limit_degrees = 113.0  # From SCP
+        dec_south_limit_degrees = -113.0  # From SCP
 
         return {
             "calibrated": True,
@@ -443,9 +599,7 @@ class Calibration:
         self._error_message = None
 
     def save_calibration(self, filepath: str):
-        """Save calibration data to file."""
-        import json
-
+        """Save calibration data to JSON file (legacy method)."""
         if not self.is_calibrated:
             raise CalibrationError("Cannot save uncalibrated data")
 
@@ -467,9 +621,7 @@ class Calibration:
         logger.info(f"Calibration data saved to {filepath}")
 
     def load_calibration(self, filepath: str):
-        """Load calibration data from file."""
-        import json
-
+        """Load calibration data from JSON file (legacy method)."""
         try:
             with open(filepath, 'r') as f:
                 data = json.load(f)
