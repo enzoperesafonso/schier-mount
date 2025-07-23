@@ -40,7 +40,7 @@ class CalibrationConfig:
     ra_total_range_hours: float = 12.0  # ±6 hours
     fast_velocity: int = 60000
     slow_velocity: int = 5000
-    home_velocity: int = 65000
+    home_velocity: int = 60000
     positioning_velocity: int = 50000
     min_expected_range: int = 1000  # Minimum reasonable encoder range
     # New fields for config output
@@ -376,7 +376,7 @@ class Calibration:
             raise CalibrationError(error_msg) from e
 
     def get_config_data(self) -> Dict:
-        """Generate configuration data in the format you specified."""
+        """Generate configuration data."""
         if not self.is_calibrated:
             raise CalibrationError("Cannot generate config data - telescope not calibrated")
 
