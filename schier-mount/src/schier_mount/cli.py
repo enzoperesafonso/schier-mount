@@ -80,7 +80,7 @@ class TelescopeCLI:
     """Main CLI class for telescope operations."""
 
     def __init__(self):
-        self.mount = Comms()  # Replace with real mount communication
+        self.mount = Comm()  # Replace with real mount communication
         self.calibrator = None
         self.pointer = None
         self.config_file = "telescope_config.yaml"
