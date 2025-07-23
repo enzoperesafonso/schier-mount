@@ -1,10 +1,11 @@
 from utils.calibration import Calibration
 from utils.comm import Comm
+import asyncio
 
 comm = Comm()
 
 cal = Calibration(comm)
 
 
-cal.calibrate()
+asyncio.run(cal.calibrate())
 
