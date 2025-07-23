@@ -237,9 +237,9 @@ class Calibration:
 
             # Use appropriate move method
             if axis.upper() == 'RA':
-                await self.mount.move_ra(extreme_pos)
+                await (self.mount.move_ra_enc(extreme_pos))
             else:
-                await self.mount.move_dec(extreme_pos)
+                await self.mount.move_dec_enc(extreme_pos)
 
             # Wait for motion to stop (should hit limit)
             if await self.wait_for_motion_stop(axis):
