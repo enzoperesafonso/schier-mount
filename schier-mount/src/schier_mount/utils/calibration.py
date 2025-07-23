@@ -1,8 +1,11 @@
 import asyncio
+import logging
 from datetime import datetime
 from typing import Dict, Tuple, Optional, Callable
 from enum import Enum
 from dataclasses import dataclass
+
+logger = logging.getLogger(__name__)
 
 
 class CalibrationStatus(Enum):
@@ -14,11 +17,31 @@ class CalibrationStatus(Enum):
 
 class CalibrationPhase(Enum):
     IDLE = "idle"
-    FINDING_HA_NEG = "finding_ha_negative"  # Fixed typo
-    FINDING_HA_POS = "finding_ha_positive"
+    INITIALIZING = "initializing"
+    FINDING_RA_NEG = "finding_ra_negative"
+    FINDING_RA_POS = "finding_ra_positive"
     FINDING_DEC_NEG = "finding_dec_negative"
     FINDING_DEC_POS = "finding_dec_positive"
+    CALCULATING = "calculating"
+    VALIDATING = "validating"
     COMPLETE = "complete"
+
+
+@dataclass
+class CalibrationConfig:
+    """Configuration parameters for calibration."""
+    motion_timeout: float = 420.0
+    stability_threshold: int = 50  # encoder steps
+    stability_checks: int = 5
+    extreme_position: int = 15000000
+    dec_total_range_degrees: float = 235.0  # 122° + 113°
+    ra_total_range_hours: float = 12.0  # ±6 hours
+    fast_velocity: int = 60000
+    slow_velocity: int = 5000
+    home_velocity: int = 65000
+    positioning_velocity: int = 50000
+    min_expected_range: int = 1000  # Minimum reasonable encoder range
+
 
 @dataclass
 class CalibrationProgress:
@@ -30,30 +53,45 @@ class CalibrationProgress:
     limits_found: Dict[str, Optional[int]] = None
 
 
+class CalibrationError(Exception):
+    """Custom exception for calibration errors."""
+    pass
+
+
 class Calibration:
     """Calibration class for fork-mounted equatorial telescope."""
 
-    def __init__(self, comm, observatory_latitude: float = -22.9):  # Default to Namibia
+    def __init__(self, comm, config: Optional[CalibrationConfig] = None):
         """
         Initialize calibration module.
 
         Args:
-            comm: Object with async methods: get_encoder_positions(),
-                           move_ra_enc(), move_dec_enc(), move_enc(), stop(), set_velocity()
-            observatory_latitude: Observatory latitude in degrees
+            comm: Communication object with async methods:
+                  get_encoder_positions(), move_ra(), move_dec(),
+                  move_enc(), stop(), set_velocity()
+            config: Calibration configuration parameters
         """
         self.mount = comm
-        self.observatory_latitude = observatory_latitude
+        self.config = config or CalibrationConfig()
 
         self._calibration_data = {
-            'limits': {'ra_negative': None, 'ra_positive': None,
-                       'dec_negative': None, 'dec_positive': None},
-            'ranges': {'ra_encoder_range': None, 'dec_encoder_range': None},
+            'limits': {
+                'ra_negative': None,
+                'ra_positive': None,
+                'dec_negative': None,
+                'dec_positive': None
+            },
+            'ranges': {
+                'ra_encoder_range': None,
+                'dec_encoder_range': None
+            },
+            'conversions': {
+                'dec_degrees_per_step': None,
+                'ra_hours_per_step': None,
+            },
             'calibrated': False,
             'calibration_date': None,
-            'home_ra': None,
-            'home_dec': None,
-            'observatory_latitude': observatory_latitude
+            'config_used': self.config
         }
 
         self._status = CalibrationStatus.NOT_STARTED
@@ -62,14 +100,18 @@ class Calibration:
         self._current_operation = "Ready"
         self._error_message = None
 
-        # Configurable parameters
-        self.motion_timeout = 120.0
-        self.stability_threshold = 50  # encoder steps
-        self.stability_checks = 5
-        self.fast_velocity = 70000
-        self.slow_velocity = 5000
-        self.home_velocity = 65000
-        self.positioning_velocity = 50000
+        # Phase progress mapping for dynamic progress calculation
+        self._phase_progress = {
+            CalibrationPhase.IDLE: 0,
+            CalibrationPhase.INITIALIZING: 5,
+            CalibrationPhase.FINDING_RA_NEG: 15,
+            CalibrationPhase.FINDING_RA_POS: 35,
+            CalibrationPhase.FINDING_DEC_NEG: 55,
+            CalibrationPhase.FINDING_DEC_POS: 75,
+            CalibrationPhase.CALCULATING: 85,
+            CalibrationPhase.VALIDATING: 95,
+            CalibrationPhase.COMPLETE: 100
+        }
 
     @property
     def is_calibrated(self) -> bool:
@@ -92,31 +134,68 @@ class Calibration:
             limits_found=self._calibration_data['limits'].copy()
         )
 
+    def _update_progress(self, phase: CalibrationPhase, operation: str,
+                         progress_callback: Optional[Callable] = None):
+        """Update progress and call callback if provided."""
+        self._phase = phase
+        self._progress = self._phase_progress.get(phase, 0)
+        self._current_operation = operation
+
+        logger.info(f"Calibration progress: {self._progress}% - {operation}")
+
+        if progress_callback:
+            progress_callback(self.get_progress())
+
+    async def emergency_stop(self):
+        """Emergency stop with error state."""
+        logger.warning("Emergency stop triggered")
+        await self.mount.stop()
+        self._status = CalibrationStatus.FAILED
+        self._error_message = "Emergency stop triggered"
+
     async def wait_for_motion_stop(self, axis: str, timeout: float = None) -> bool:
-        """Wait for axis to stop moving by detecting position stability."""
+        """
+        Wait for axis to stop moving by detecting position stability.
+
+        Args:
+            axis: 'RA' or 'DEC'
+            timeout: Maximum time to wait (uses config default if None)
+
+        Returns:
+            True if motion stopped, False if timeout
+        """
         if timeout is None:
-            timeout = self.motion_timeout
+            timeout = self.config.motion_timeout
 
         start_time = asyncio.get_event_loop().time()
         last_pos = None
         stable_count = 0
 
+        logger.debug(f"Waiting for {axis} motion to stop (timeout: {timeout}s)")
+
         while (asyncio.get_event_loop().time() - start_time) < timeout:
-            ra_enc, dec_enc = await self.mount.get_encoder_positions()
-            current_pos = ra_enc if axis.upper() == 'RA' else dec_enc
+            try:
+                ra_enc, dec_enc = await self.mount.get_encoder_positions()
+                current_pos = ra_enc if axis.upper() == 'RA' else dec_enc
 
-            if last_pos is not None:
-                movement = abs(current_pos - last_pos)
-                if movement < self.stability_threshold:
-                    stable_count += 1
-                    if stable_count >= self.stability_checks:
-                        return True
-                else:
-                    stable_count = 0
+                if last_pos is not None:
+                    movement = abs(current_pos - last_pos)
+                    if movement < self.config.stability_threshold:
+                        stable_count += 1
+                        if stable_count >= self.config.stability_checks:
+                            logger.debug(f"{axis} motion stopped at position {current_pos}")
+                            return True
+                    else:
+                        stable_count = 0
 
-            last_pos = current_pos
-            await asyncio.sleep(1.0)
+                last_pos = current_pos
+                await asyncio.sleep(1.0)
 
+            except Exception as e:
+                logger.error(f"Error checking motion status: {e}")
+                return False
+
+        logger.warning(f"Motion timeout for {axis} axis")
         return False
 
     async def find_limit(self, direction: str, axis: str) -> int:
@@ -131,36 +210,74 @@ class Calibration:
             Encoder position at limit
 
         Raises:
-            RuntimeError: If limit finding fails
+            CalibrationError: If limit finding fails
         """
-        self._current_operation = f"Finding {axis} {direction} limit"
+        logger.info(f"Finding {axis} {direction} limit")
 
         # Stop current motion
         await self.mount.stop()
         await asyncio.sleep(1)
 
-        # Set appropriate speeds
-        if axis.upper() == 'RA':
-            await self.mount.set_velocity(self.fast_velocity, self.slow_velocity)
-        else:
-            await self.mount.set_velocity(self.slow_velocity, self.fast_velocity)
+        try:
+            # Set appropriate speeds based on axis
+            if axis.upper() == 'RA':
+                await self.mount.set_velocity(self.config.fast_velocity, self.config.slow_velocity)
+            else:
+                await self.mount.set_velocity(self.config.slow_velocity, self.config.fast_velocity)
 
-        # Move to extreme position to find limit
-        extreme_pos = 15000000 if direction == 'positive' else -15000000
+            # Move to extreme position to find limit
+            extreme_pos = (self.config.extreme_position if direction == 'positive'
+                           else -self.config.extreme_position)
 
-        if axis.upper() == 'RA':
-            await self.mount.move_ra_enc(extreme_pos)  # Fixed method name
-        else:
-            await self.mount.move_dec_enc(extreme_pos)  # Fixed method name
+            # Use appropriate move method
+            if axis.upper() == 'RA':
+                await self.mount.move_ra(extreme_pos)
+            else:
+                await self.mount.move_dec(extreme_pos)
 
-        # Wait for motion to stop (should hit limit)
-        if await self.wait_for_motion_stop(axis):
-            ra_enc, dec_enc = await self.mount.get_encoder_positions()
-            limit_pos = ra_enc if axis.upper() == 'RA' else dec_enc
-            return limit_pos
-        else:
+            # Wait for motion to stop (should hit limit)
+            if await self.wait_for_motion_stop(axis):
+                ra_enc, dec_enc = await self.mount.get_encoder_positions()
+                limit_pos = ra_enc if axis.upper() == 'RA' else dec_enc
+                logger.info(f"{axis} {direction} limit found at position {limit_pos}")
+                return limit_pos
+            else:
+                await self.mount.stop()
+                raise CalibrationError(f"Failed to find {axis} {direction} limit - motion timeout")
+
+        except Exception as e:
             await self.mount.stop()
-            raise RuntimeError(f"Failed to find {axis} {direction} limit - motion timeout")
+            raise CalibrationError(f"Error finding {axis} {direction} limit: {e}")
+
+    def _validate_limits(self):
+        """Validate that found limits are reasonable."""
+        logger.info("Validating calibration limits")
+
+        limits = self._calibration_data['limits']
+
+        # Check all limits were found
+        for key, value in limits.items():
+            if value is None:
+                raise CalibrationError(f"Limit {key} not found")
+
+        # Check ranges are reasonable
+        ra_range = limits['ra_positive'] - limits['ra_negative']
+        dec_range = limits['dec_positive'] - limits['dec_negative']
+
+        if ra_range < self.config.min_expected_range:
+            raise CalibrationError(f"RA range too small: {ra_range} steps")
+
+        if dec_range < self.config.min_expected_range:
+            raise CalibrationError(f"DEC range too small: {dec_range} steps")
+
+        # Check that positive limits are actually greater than negative
+        if limits['ra_positive'] <= limits['ra_negative']:
+            raise CalibrationError("RA positive limit not greater than negative limit")
+
+        if limits['dec_positive'] <= limits['dec_negative']:
+            raise CalibrationError("DEC positive limit not greater than negative limit")
+
+        logger.info(f"Limits validated - RA range: {ra_range}, DEC range: {dec_range}")
 
     async def calibrate(self, progress_callback: Optional[Callable[[CalibrationProgress], None]] = None) -> Dict:
         """
@@ -173,96 +290,84 @@ class Calibration:
             Calibration data dictionary
 
         Raises:
-            RuntimeError: If calibration fails
+            CalibrationError: If calibration fails
         """
+        logger.info("Starting telescope calibration")
+
         try:
             self._status = CalibrationStatus.IN_PROGRESS
             self._error_message = None
 
-            def update_progress():
-                if progress_callback:
-                    progress_callback(self.get_progress())
-
             # Initialize
-            self._phase = CalibrationPhase.IDLE
-            self._progress = 5.0
-            self._current_operation = "Initializing"
-            update_progress()
-
+            self._update_progress(CalibrationPhase.INITIALIZING, "Initializing calibration", progress_callback)
             await self.mount.stop()
-            await self.mount.set_velocity(60000, 60000)
+            await self.mount.set_velocity(self.config.fast_velocity, self.config.fast_velocity)
             await asyncio.sleep(2)
 
             # Find RA negative limit (west limit, -6 hours HA)
-            self._phase = CalibrationPhase.FINDING_HA_NEG
-            self._progress = 15.0
-            update_progress()
-
+            self._update_progress(CalibrationPhase.FINDING_RA_NEG, "Finding RA negative limit", progress_callback)
             self._calibration_data['limits']['ra_negative'] = await self.find_limit('negative', 'RA')
-            await asyncio.sleep(3)
+            await asyncio.sleep(2)
 
             # Find RA positive limit (east limit, +6 hours HA)
-            self._phase = CalibrationPhase.FINDING_HA_POS
-            self._progress = 35.0
-            update_progress()
-
+            self._update_progress(CalibrationPhase.FINDING_RA_POS, "Finding RA positive limit", progress_callback)
             self._calibration_data['limits']['ra_positive'] = await self.find_limit('positive', 'RA')
-            await asyncio.sleep(3)
+            await asyncio.sleep(2)
 
-            # Find Dec negative limit (113° from SCP - southern limit)
-            self._phase = CalibrationPhase.FINDING_DEC_NEG
-            self._progress = 55.0
-            update_progress()
-
+            # Find Dec negative limit (southern limit)
+            self._update_progress(CalibrationPhase.FINDING_DEC_NEG, "Finding DEC negative limit", progress_callback)
             self._calibration_data['limits']['dec_negative'] = await self.find_limit('negative', 'DEC')
-            await asyncio.sleep(3)
+            await asyncio.sleep(2)
 
-            # Find Dec positive limit (122° from SCP - northern limit)
-            self._phase = CalibrationPhase.FINDING_DEC_POS
-            self._progress = 75.0
-            update_progress()
-
+            # Find Dec positive limit (northern limit)
+            self._update_progress(CalibrationPhase.FINDING_DEC_POS, "Finding DEC positive limit", progress_callback)
             self._calibration_data['limits']['dec_positive'] = await self.find_limit('positive', 'DEC')
 
-            # Calculate ranges and home positions
+            # Calculate ranges and conversion factors
+            self._update_progress(CalibrationPhase.CALCULATING, "Calculating ranges and conversions", progress_callback)
+
             ra_range = (self._calibration_data['limits']['ra_positive'] -
                         self._calibration_data['limits']['ra_negative'])
             dec_range = (self._calibration_data['limits']['dec_positive'] -
                          self._calibration_data['limits']['dec_negative'])
 
-            ra_center = ((self._calibration_data['limits']['ra_positive'] +
-                          self._calibration_data['limits']['ra_negative']) // 2)
-            dec_center = ((self._calibration_data['limits']['dec_positive'] +
-                           self._calibration_data['limits']['dec_negative']) // 2)
+            self._calibration_data['ranges'] = {
+                'ra_encoder_range': ra_range,
+                'dec_encoder_range': dec_range
+            }
 
-            self._calibration_data.update({
-                'ranges': {
-                    'ra_encoder_range': ra_range,
-                    'dec_encoder_range': dec_range
-                },
-                'home_ra': ra_center,
-                'home_dec': dec_center,
-                'calibration_date': datetime.now().isoformat()
-            })
+            self._calibration_data['conversions'] = {
+                'dec_degrees_per_step': self.config.dec_total_range_degrees / dec_range,
+                'ra_hours_per_step': self.config.ra_total_range_hours / ra_range,
+            }
 
-            # Mark as calibrated
+            # Validate results
+            self._update_progress(CalibrationPhase.VALIDATING, "Validating calibration results", progress_callback)
+            self._validate_limits()
+
+            # Mark as calibrated and complete
             self._calibration_data['calibrated'] = True
-            self._status = CalibrationStatus.COMPLETED
-            self._phase = CalibrationPhase.COMPLETE
-            self._progress = 100.0
-            self._current_operation = "Calibration complete"
-            update_progress()
+            self._calibration_data['calibration_date'] = datetime.now().isoformat()
 
+            self._status = CalibrationStatus.COMPLETED
+            self._update_progress(CalibrationPhase.COMPLETE, "Calibration completed successfully", progress_callback)
+
+            logger.info("Telescope calibration completed successfully")
             return self._calibration_data.copy()
 
         except Exception as e:
+            error_msg = f"Calibration failed: {e}"
+            logger.error(error_msg)
+
             self._status = CalibrationStatus.FAILED
             self._error_message = str(e)
             self._current_operation = "Calibration failed"
+
             if progress_callback:
                 progress_callback(self.get_progress())
+
             await self.mount.stop()
-            raise RuntimeError(f"Calibration failed: {e}")
+            raise CalibrationError(error_msg) from e
 
     def get_limits_summary(self) -> Dict[str, any]:
         """Get summary of calibration limits and ranges."""
@@ -271,33 +376,123 @@ class Calibration:
 
         limits = self._calibration_data['limits']
         ranges = self._calibration_data['ranges']
+        conversions = self._calibration_data['conversions']
 
-        # Calculate actual declination limits based on your specifications
-        # Dec positive (north): 122° from SCP = -90° + 122° = +32°
-        # Dec negative (south): 113° from SCP = -90° - 113° = -203° (clamped to -90°)
-        dec_positive_degrees = -90.0 + 122.0  # +32°
-        dec_negative_degrees = max(-90.0 - 113.0, -90.0)  # -90° (south pole limit)
+        # Calculate actual declination limits based on configuration
+        dec_north_limit_degrees = 122.0  # From SCP
+        dec_south_limit_degrees = 113.0  # From SCP
 
         return {
             "calibrated": True,
+            "calibration_date": self._calibration_data['calibration_date'],
             "ra_range_steps": ranges['ra_encoder_range'],
             "dec_range_steps": ranges['dec_encoder_range'],
+            "conversions": {
+                "dec_degrees_per_step": conversions['dec_degrees_per_step'],
+                "ra_hours_per_step": conversions['ra_hours_per_step']
+            },
             "ra_limits": {
                 "negative_hours": -6.0,  # West limit
-                "positive_hours": 6.0,   # East limit
+                "positive_hours": 6.0,  # East limit
                 "negative_encoder": limits['ra_negative'],
                 "positive_encoder": limits['ra_positive']
             },
             "dec_limits": {
-                "negative_degrees": dec_negative_degrees,  # Southern limit
-                "positive_degrees": dec_positive_degrees,  # Northern limit
+                "negative_degrees": dec_south_limit_degrees,  # Southern limit
+                "positive_degrees": dec_north_limit_degrees,  # Northern limit
                 "negative_encoder": limits['dec_negative'],
                 "positive_encoder": limits['dec_positive'],
-                "angular_range_from_scp": 235.0  # 122° + 113°
+                "dec_angular_range": self.config.dec_total_range_degrees
             },
-            "home_position": {
-                "ra_encoder": self._calibration_data['home_ra'],
-                "dec_encoder": self._calibration_data['home_dec']
-            },
-            "observatory_latitude": self.observatory_latitude
+            "config_used": {
+                "motion_timeout": self.config.motion_timeout,
+                "stability_threshold": self.config.stability_threshold,
+                "dec_total_range_degrees": self.config.dec_total_range_degrees,
+                "ra_total_range_hours": self.config.ra_total_range_hours
+            }
         }
+
+    def reset_calibration(self):
+        """Reset calibration data and status."""
+        logger.info("Resetting calibration data")
+
+        self._calibration_data = {
+            'limits': {
+                'ra_negative': None,
+                'ra_positive': None,
+                'dec_negative': None,
+                'dec_positive': None
+            },
+            'ranges': {
+                'ra_encoder_range': None,
+                'dec_encoder_range': None
+            },
+            'conversions': {
+                'dec_degrees_per_step': None,
+                'ra_hours_per_step': None,
+            },
+            'calibrated': False,
+            'calibration_date': None,
+            'config_used': self.config
+        }
+
+        self._status = CalibrationStatus.NOT_STARTED
+        self._phase = CalibrationPhase.IDLE
+        self._progress = 0.0
+        self._current_operation = "Ready"
+        self._error_message = None
+
+    def save_calibration(self, filepath: str):
+        """Save calibration data to file."""
+        import json
+
+        if not self.is_calibrated:
+            raise CalibrationError("Cannot save uncalibrated data")
+
+        # Convert dataclass to dict for JSON serialization
+        data_to_save = self._calibration_data.copy()
+        data_to_save['config_used'] = {
+            'motion_timeout': self.config.motion_timeout,
+            'stability_threshold': self.config.stability_threshold,
+            'stability_checks': self.config.stability_checks,
+            'extreme_position': self.config.extreme_position,
+            'dec_total_range_degrees': self.config.dec_total_range_degrees,
+            'ra_total_range_hours': self.config.ra_total_range_hours,
+            'min_expected_range': self.config.min_expected_range
+        }
+
+        with open(filepath, 'w') as f:
+            json.dump(data_to_save, f, indent=2)
+
+        logger.info(f"Calibration data saved to {filepath}")
+
+    def load_calibration(self, filepath: str):
+        """Load calibration data from file."""
+        import json
+
+        try:
+            with open(filepath, 'r') as f:
+                data = json.load(f)
+
+            # Validate loaded data has required fields
+            required_fields = ['limits', 'ranges', 'conversions', 'calibrated']
+            for field in required_fields:
+                if field not in data:
+                    raise CalibrationError(f"Invalid calibration file: missing {field}")
+
+            self._calibration_data = data
+
+            if data['calibrated']:
+                self._status = CalibrationStatus.COMPLETED
+                self._phase = CalibrationPhase.COMPLETE
+                self._progress = 100.0
+                self._current_operation = "Loaded from file"
+
+            logger.info(f"Calibration data loaded from {filepath}")
+
+        except FileNotFoundError:
+            raise CalibrationError(f"Calibration file not found: {filepath}")
+        except json.JSONDecodeError:
+            raise CalibrationError(f"Invalid JSON in calibration file: {filepath}")
+        except Exception as e:
+            raise CalibrationError(f"Error loading calibration file: {e}")

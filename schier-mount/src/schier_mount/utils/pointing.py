@@ -3,16 +3,21 @@ from typing import Tuple, Optional
 from datetime import datetime
 import math
 
+# when telescope is between hours angles -6 and 6 we track the RA through east (+) to west (-) using the north (+)
+# side of the fork,
+#
+# when outside -6 to 6 hours we track the RA west (-) through east (+) using the south (-) side of the fork
+
 
 class SchierMountPointing:
     """Handle telescope pointing and coordinate conversion for fork-mounted equatorial mount"""
 
-    def __init__(self, Comm, calibration_data, observatory_latitude):
-        self._Comm = Comm
+    def __init__(self, comm, calibration_data, observatory_latitude):
+        self._Comm = comm
         self._calibration_data = calibration_data
         self._observatory_latitude = observatory_latitude
-        self.ha_tracking_side = 'west'
-        self.dec_tracking_side = 'north'
+
+        self.under_pole_pointing = False
 
     async def goto_ha_dec(self, ha_hours: float, dec_degrees: float,
                           wait_for_completion: bool = True) -> bool:
@@ -42,8 +47,6 @@ class SchierMountPointing:
         if not await self._is_within_bounds(ra_enc, dec_enc):
             raise ValueError(f"Position HA={ha_hours}h, Dec={dec_degrees}° is outside mechanical limits")
 
-        # Determine tracking sides for this position
-        self.ha_tracking_side, self.dec_tracking_side = self._determine_track_sides(ha_hours, dec_degrees)
 
         # Move to position
         await self._Comm.move_enc(ra_enc, dec_enc)
@@ -172,55 +175,26 @@ class SchierMountPointing:
 
         return declination
 
-    def _determine_track_sides(self, ha_hours: float, dec_degrees: float) -> Tuple[str, str]:
+
+    def _get_under_pole_pointings(self, ha_mech_hours: float, dec_mech_degrees: float) -> tuple[float, float]:
         """
-        Determine tracking sides based on position.
-
-        Returns:
-            Tuple of (ha_tracking_side, dec_tracking_side)
+        Gets the alternate hour angle and dec to point for targets in forbidden zone.
         """
-        # For fork mount, tracking side depends on which side of meridian
-        ha_tracking_side = 'east' if ha_hours < 0 else 'west'
+        # Alt_RA = RA + 12h
+        # IF Alt_RA ≥ 24h THEN Alt_RA = Alt_RA - 24h
+        # Alt_Dec = -180° - Dec
 
-        # Dec tracking side based on hemisphere
-        dec_tracking_side = 'south' if dec_degrees < 0 else 'north'
+        # South celestial pole region
+        alt_dec_mech_degrees = -180.0 - dec_mech_degrees
 
-        return ha_tracking_side, dec_tracking_side
+        # Alternate HA is 12 hours opposite
+        if ha_mech_hours > 0:
+            alt_ha_mech_hours = ha_mech_hours - 12.0
+        else:
+            alt_ha_mech_hours = ha_mech_hours + 12.0
 
-    def _needs_repointing_due_to_ha_limit(self, ha_hours: float) -> bool:
-        """
-        Determines if the telescope needs to be repointed because it's
-        approaching the HA tracking limit at ±6 hours.
-        """
-        max_ha_hours = 6.0
-        safety_margin = 0.1  # in hours, ~6 minutes
+        return alt_ha_mech_hours, alt_dec_mech_degrees
 
-        return abs(ha_hours) >= (max_ha_hours - safety_margin)
+    def set_sidereal_tracking(self):
+        self._Comm.set_track_sidereal(100, self.under_pole_pointing)
 
-    def get_pointing_info(self) -> dict:
-        """
-        Get current pointing information including limits and current position.
-        """
-        if not self._calibration_data['calibrated']:
-            return {"calibrated": False}
-
-        # Calculate declination limits
-        dec_positive_limit = -(90.0 - 122.0)  # -32°
-        dec_negative_limit = -(90.0 - 113.0)  # -23°
-
-        return {
-            "calibrated": True,
-            "ha_limits": {
-                "negative_hours": -6.0,
-                "positive_hours": 6.0
-            },
-            "dec_limits": {
-                "negative_degrees": dec_negative_limit,
-                "positive_degrees": dec_positive_limit
-            },
-            "current_tracking_sides": {
-                "ha_side": self.ha_tracking_side,
-                "dec_side": self.dec_tracking_side
-            },
-            "observatory_latitude": self._observatory_latitude
-        }
