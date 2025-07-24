@@ -2,7 +2,7 @@ import asyncio
 from typing import Union, List, Tuple
 from aioserial import AioSerial
 
-from .crc import append_crc, validate_crc
+from crc import append_crc, validate_crc
 
 class Comm:
     """Low-level mount communication interface"""
