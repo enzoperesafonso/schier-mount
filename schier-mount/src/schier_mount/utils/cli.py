@@ -49,7 +49,7 @@ Type 'quit' or 'exit' to leave the program.
 
         # Tracking state
         self.tracking_enabled = False
-        self.sidereal_rate = 100
+        self.sidereal_rate = -100
         self.flipped = False
 
         # Setup logging
@@ -254,7 +254,6 @@ Type 'quit' or 'exit' to leave the program.
         if len(parts) >= 1:
             try:
                 self.sidereal_rate = int(parts[0])
-                self.sidereal_rate *= -1
             except ValueError:
                 print("❌ Invalid sidereal rate. Using default.")
 
