@@ -254,6 +254,7 @@ Type 'quit' or 'exit' to leave the program.
         if len(parts) >= 1:
             try:
                 self.sidereal_rate = int(parts[0])
+                self.sidereal_rate *= -1
             except ValueError:
                 print("❌ Invalid sidereal rate. Using default.")
 
