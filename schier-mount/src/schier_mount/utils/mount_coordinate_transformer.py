@@ -54,7 +54,6 @@ class MountCoordinateTransformer:
         """
         Convert Hour Angle in hours to RA encoder position.
         HA range: -6h to +6h maps to full encoder range.
-        Note: Encoder decreases as HA increases (negative limit > positive limit)
         """
         if not self._calibration_data['calibrated']:
             raise ValueError("Telescope not calibrated!")
@@ -62,35 +61,29 @@ class MountCoordinateTransformer:
         # Clamp to ±6 hours
         ha_hours = max(-6.0, min(6.0, ha_hours))
 
-        ra_min = self._calibration_data['limits']['ra_negative']  # 6
-        ra_max = self._calibration_data['limits']['ra_positive']  # -6
-        ra_range = self._calibration_data['ranges']['ra_encoder_range']  # should be 12
+        ra_min = self._calibration_data['limits']['ra_negative']
+        ra_range = self._calibration_data['ranges']['ra_encoder_range']
 
-        # Since encoder decreases as HA increases, we need inverted mapping:
-        # -6h should map to ra_min (6)
-        # +6h should map to ra_max (-6)
-        normalized = (ha_hours + 6.0) / 12.0  # 0 to 1
+        # Map -6h to 0, +6h to 1
+        normalized = (ha_hours + 6.0) / 12.0
 
-        # Invert the mapping since encoder decreases as HA increases
-        return int(ra_min - normalized * ra_range)
+        return int(ra_min + normalized * ra_range)
 
     def _encoder_to_mech_hours(self, ra_encoder: int) -> float:
         """
         Convert RA encoder position to Hour Angle in hours.
-        Note: Encoder decreases as HA increases (negative limit > positive limit)
         """
         if not self._calibration_data['calibrated']:
             raise ValueError("Telescope not calibrated!")
 
-        ra_min = self._calibration_data['limits']['ra_negative']  # 6
-        ra_max = self._calibration_data['limits']['ra_positive']  # -6
+        ra_min = self._calibration_data['limits']['ra_negative']
         ra_range = self._calibration_data['ranges']['ra_encoder_range']
 
         # Clamp to encoder range
-        ra_encoder = max(ra_max, min(ra_min, ra_encoder))
+        ra_encoder = max(ra_min, min(ra_min + ra_range, ra_encoder))
 
-        # Since encoder decreases as HA increases, invert the calculation
-        normalized = (ra_min - ra_encoder) / ra_range  # 0 to 1
+        # Convert to normalized position (0 to 1)
+        normalized = (ra_encoder - ra_min) / ra_range
 
         # Map 0 to -6h, 1 to +6h
         ha_hours = (normalized * 12.0) - 6.0
