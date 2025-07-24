@@ -169,9 +169,9 @@ class TelescopeCalibrator:
         await self.comm.stop()
 
         if direction == "positive":
-            safe_position = limit_position - (self.limits_safety_buffer * 2)
-        else:
             safe_position = limit_position + (self.limits_safety_buffer * 2)
+        else:
+            safe_position = limit_position - (self.limits_safety_buffer * 2)
 
         self.logger.info(f"Moving {axis.value} away from limit to safe position: {safe_position}")
 
@@ -215,7 +215,7 @@ class TelescopeCalibrator:
             calibration_data = {
                 'calibrated': True,
                 'calibration_date': datetime.now().isoformat(),
-                'sidereal_rate': 100,
+                'sidereal_rate': -100,
                 'slew_speed': 5000,
                 'limits_safety_buffer': self.limits_safety_buffer,
                 'limits': {

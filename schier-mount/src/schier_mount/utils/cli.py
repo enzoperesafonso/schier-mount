@@ -270,9 +270,8 @@ Type 'quit' or 'exit' to leave the program.
             self.comm.set_track_sidereal(self.sidereal_rate, self.flipped)
         )
 
-        if result is not None:
-            self.tracking_enabled = True
-            print("✅ Sidereal tracking enabled")
+        self.tracking_enabled = True
+        print("✅ Sidereal tracking enabled")
 
     def do_track_stop(self, args):
         """
@@ -282,9 +281,9 @@ Type 'quit' or 'exit' to leave the program.
         """
         print("⏹️  Stopping sidereal tracking...")
         result = self._run_async(self.comm.stop())
-        if result is not None:
-            self.tracking_enabled = False
-            print("✅ Sidereal tracking disabled")
+
+        self.tracking_enabled = False
+        print("✅ Sidereal tracking disabled")
 
     def do_track_status(self, args):
         """Show current tracking status."""
