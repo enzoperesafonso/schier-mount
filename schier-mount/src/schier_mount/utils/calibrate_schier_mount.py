@@ -37,7 +37,6 @@ class TelescopeCalibrator:
 
         # Calibration parameters
         self.search_velocity = 40000  # Slow speed for safety
-        self.search_acceleration = 30000
         self.position_tolerance = 50  # Encoder counts tolerance for detecting limits
         self.status_check_interval = 0.5  # seconds
         self.movement_timeout = 600  # seconds max per axis movement
@@ -198,8 +197,6 @@ class TelescopeCalibrator:
             # Stop any current movement
             await self.comm.stop()
 
-            # Set safe velocity and acceleration
-            await self.comm.set_acceleration(self.search_acceleration, self.search_acceleration)
             await self.comm.set_velocity(self.search_velocity, self.search_velocity)
 
             await asyncio.sleep(1)
