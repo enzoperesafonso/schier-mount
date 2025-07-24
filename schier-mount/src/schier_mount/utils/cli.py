@@ -97,6 +97,14 @@ Type 'quit' or 'exit' to leave the program.
             print(f"❌ Error: {e}")
             return None
 
+    async def _run_async_method(self, coro):
+        """Helper to await async methods."""
+        return await coro
+
+    async def _convert_coordinates(self, ha_hours: float, dec_degrees: float):
+        """Convert HA/Dec to encoder positions."""
+        return await self.transformer.astro_ha_dec_to_encoder_steps(ha_hours, dec_degrees)
+
     # ==================== CALIBRATION COMMANDS ====================
 
     def do_calibrate(self, args):
@@ -159,7 +167,11 @@ Type 'quit' or 'exit' to leave the program.
             print(f"🎯 Moving to HA={ha_hours}h, Dec={dec_degrees}°...")
 
             # Convert to encoder positions
-            ra_enc, dec_enc = self.transformer.astro_ha_dec_to_encoder_steps(ha_hours, dec_degrees)
+            coord_result = self._run_async(self._convert_coordinates(ha_hours, dec_degrees))
+            if coord_result is None:
+                return
+
+            ra_enc, dec_enc = coord_result
 
             # Move telescope
             result = self._run_async(self.comm.move_enc(ra_enc, dec_enc))
