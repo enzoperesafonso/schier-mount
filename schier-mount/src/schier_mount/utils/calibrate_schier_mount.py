@@ -115,9 +115,9 @@ class TelescopeCalibrator:
         """Find a single limit for an axis."""
         # Move towards the limit
         if direction == "negative":
-            target_position = -10000000  # Large negative number
+            target_position = -150000000  # Large negative number
         else:
-            target_position = 10000000  # Large positive number
+            target_position = 150000000  # Large positive number
 
         if axis == CalibrationAxis.RA:
             await self.comm.move_ra_enc(target_position)
