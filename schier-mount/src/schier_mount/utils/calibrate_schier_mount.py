@@ -7,7 +7,7 @@ from pathlib import Path
 import logging
 
 # Assuming your existing modules are available
-from .comm import Comm
+from comm import Comm
 
 
 class CalibrationStep(Enum):
