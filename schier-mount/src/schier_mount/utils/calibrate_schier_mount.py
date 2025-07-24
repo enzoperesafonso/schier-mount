@@ -87,11 +87,8 @@ class TelescopeCalibrator:
 
         # Set safe velocity and acceleration
         await self.comm.set_acceleration(self.search_acceleration, self.search_acceleration)
-        if axis == CalibrationAxis.RA:
-            await self.comm.set_velocity(self.search_velocity, 0)
+        await self.comm.set_velocity(self.search_velocity, self.search_velocity)
 
-        else:
-            await self.comm.set_velocity(0, self.search_velocity)
         # Find negative limit first
         self.logger.info(f"Searching for {axis.value} negative limit")
         negative_limit = await self._find_limit(axis, direction="negative")
@@ -113,6 +110,9 @@ class TelescopeCalibrator:
     async def _find_limit(self, axis: CalibrationAxis, direction: str) -> int:
         """Find a single limit for an axis."""
         # Move towards the limit
+
+        await self.comm.stop()
+
         if direction == "negative":
             target_position = -150000000  # Large negative number
         else:
@@ -154,6 +154,8 @@ class TelescopeCalibrator:
 
     async def _move_away_from_limit(self, axis: CalibrationAxis, limit_position: int, direction: str):
         """Move away from a limit switch to avoid mechanical stress."""
+        await self.comm.stop()
+
         if direction == "positive":
             safe_position = limit_position + (self.limits_safety_buffer * 2)
         else:
@@ -167,7 +169,7 @@ class TelescopeCalibrator:
             await self.comm.move_dec_enc(safe_position)
 
         # Wait for movement to complete
-        await asyncio.sleep(2)
+        await asyncio.sleep(10)
         await self.comm.stop()
 
     async def calibrate_mount(self) -> Dict[str, Any]:
