@@ -73,60 +73,31 @@ class TelescopeCalibrator:
 
         return logger
 
-    async def find_axis_limits(self, axis: CalibrationAxis) -> Tuple[int, int]:
-        """
-        Find the encoder limits for a specific axis.
-
-        Args:
-            axis: The axis to calibrate (RA or DEC)
-
-        Returns:
-            Tuple of (negative_limit, positive_limit) encoder positions
-        """
-        self.logger.info(f"Starting {axis.value.upper()} axis limit detection")
-
-        # Set safe velocity and acceleration
-        await self.comm.set_acceleration(self.search_acceleration, self.search_acceleration)
-        await self.comm.set_velocity(self.search_velocity, self.search_velocity)
-
-        # Find negative limit first
-        self.logger.info(f"Searching for {axis.value} negative limit")
-        negative_limit = await self._find_limit(axis, direction="negative")
-
-        # Move away from negative limit
-        # await self._move_away_from_limit(axis, negative_limit, direction="positive")
-
-        # Find positive limit
-        self.logger.info(f"Searching for {axis.value} positive limit")
-        positive_limit = await self._find_limit(axis, direction="positive")
-
-        # Move away from positive limit
-       # await self._move_away_from_limit(axis, positive_limit, direction="negative")
-
-        self.logger.info(f"{axis.value.upper()} limits found: negative={negative_limit}, positive={positive_limit}")
-
-        return negative_limit, positive_limit
-
     async def _find_limit(self, axis: CalibrationAxis, direction: str) -> int:
-        """Find a single limit for an axis."""
-        # Move towards the limit
-
+        """Find a single limit for an axis with improved detection logic."""
         await self.comm.stop()
 
         if direction == "negative":
-            target_position = -150000000  # Large negative number
+            target_position = -150000000
         else:
-            target_position = 150000000  # Large positive number
+            target_position = 150000000
 
         if axis == CalibrationAxis.RA:
             await self.comm.move_ra_enc(target_position)
         else:
             await self.comm.move_dec_enc(target_position)
 
-        # Monitor position until limit is reached
-        last_position = None
+        # Enhanced monitoring with multiple criteria
+        position_history = []
         stationary_count = 0
         start_time = asyncio.get_event_loop().time()
+        last_significant_movement_time = start_time
+
+        # Tunable parameters for more robust detection
+        min_stationary_duration = 2.0  # Must be stationary for 2 seconds
+        position_history_size = 10  # Track last 10 positions
+        significant_movement_threshold = 200  # Larger threshold for "real" movement
+        max_time_without_progress = 30  # Max time without significant movement
 
         while True:
             current_time = asyncio.get_event_loop().time()
@@ -136,21 +107,59 @@ class TelescopeCalibrator:
             ra_enc, dec_enc = await self.comm.get_encoder_positions()
             current_position = ra_enc if axis == CalibrationAxis.RA else dec_enc
 
-            if last_position is not None:
-                position_change = abs(current_position - last_position)
-                if position_change < self.position_tolerance:
+            # Add current position to history
+            position_history.append({
+                'position': current_position,
+                'timestamp': current_time
+            })
+
+            # Keep only recent history
+            if len(position_history) > position_history_size:
+                position_history.pop(0)
+
+            if len(position_history) >= 2:
+                # Check for immediate movement
+                immediate_change = abs(current_position - position_history[-2]['position'])
+
+                # Check for significant movement over longer period
+                if len(position_history) >= position_history_size:
+                    long_term_change = abs(current_position - position_history[0]['position'])
+                    time_span = current_time - position_history[0]['timestamp']
+
+                    if long_term_change > significant_movement_threshold:
+                        # We've had significant movement, reset counters
+                        last_significant_movement_time = current_time
+                        stationary_count = 0
+                    elif current_time - last_significant_movement_time > max_time_without_progress:
+                        # No significant progress for too long, likely at limit
+                        self.logger.warning(
+                            f"No significant movement for {max_time_without_progress}s, assuming limit reached")
+                        break
+
+                # Short-term stationary detection (refined)
+                if immediate_change < self.position_tolerance:
                     stationary_count += 1
-                    if stationary_count >= 3:  # Confirm we've hit the limit
-                        # Stop the axis
-                        await self.comm.stop()
-                        self.logger.info(
-                            f"{axis.value} {direction} limit found at encoder position: {current_position}")
-                        return current_position
+
+                    # Calculate how long we've been stationary
+                    stationary_duration = stationary_count * self.status_check_interval
+
+                    if stationary_duration >= min_stationary_duration:
+                        self.logger.info(f"{axis.value} {direction} limit found at: {current_position}")
+                        break
                 else:
                     stationary_count = 0
 
-            last_position = current_position
             await asyncio.sleep(self.status_check_interval)
+
+        # Stop the axis and return final position
+        await self.comm.stop()
+        await asyncio.sleep(0.5)  # Allow time for stop command
+
+        # Get final position after stopping
+        ra_enc, dec_enc = await self.comm.get_encoder_positions()
+        final_position = ra_enc if axis == CalibrationAxis.RA else dec_enc
+
+        return final_position
 
     async def _move_away_from_limit(self, axis: CalibrationAxis, limit_position: int, direction: str):
         """Move away from a limit switch to avoid mechanical stress."""
