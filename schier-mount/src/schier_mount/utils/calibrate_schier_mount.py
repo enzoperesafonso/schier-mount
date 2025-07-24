@@ -169,9 +169,9 @@ class TelescopeCalibrator:
         await self.comm.stop()
 
         if direction == "positive":
-            safe_position = limit_position + (self.limits_safety_buffer * 2)
-        else:
             safe_position = limit_position - (self.limits_safety_buffer * 2)
+        else:
+            safe_position = limit_position + (self.limits_safety_buffer * 2)
 
         self.logger.info(f"Moving {axis.value} away from limit to safe position: {safe_position}")
 

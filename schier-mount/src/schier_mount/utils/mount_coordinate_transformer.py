@@ -37,16 +37,11 @@ class MountCoordinateTransformer:
 
 
         # Check bounds
-        if not await self._is_within_bounds(ra_enc, dec_enc):
+        if not self._is_within_bounds(ra_enc, dec_enc):
             raise ValueError(f"Position HA={ha_hours}h, Dec={dec_degrees}° is outside mechanical limits")
 
-        # Move to position
 
-        if wait_for_completion:
-            # Wait for motion to complete (you might want to implement this based on your system)
-            await asyncio.sleep(2)  # Simple wait - replace with proper motion detection
-
-        return True
+        return ra_enc, dec_enc
 
 
     def _is_within_bounds(self, ha_enc: int, dec_enc: int) -> bool:

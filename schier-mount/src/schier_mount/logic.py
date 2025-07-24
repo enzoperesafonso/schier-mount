@@ -19,18 +19,18 @@ test_calibration_data = {
     # encoder limits (raw encoder counts)
     'limits': {
         # RA axis encoder limits (±6 hours of movement)
-        'ra_negative': 0,  # Encoder count at HA = -6 hours
-        'ra_positive': 100,  # Encoder count at HA = +6 hours
+        'ra_negative':  -2349433,  # Encoder count at HA = -6 hours
+        'ra_positive': 2138930,  # Encoder count at HA = +6 hours
 
         # Dec axis encoder limits
-        'dec_negative': -50,  # Encoder count at minimum declination
-        'dec_positive': 50,  # Encoder count at maximum declination
+        'dec_negative': -559784,  # Encoder count at minimum declination
+        'dec_positive': 3978578,  # Encoder count at maximum declination
     },
 
     # calculated ranges from limits
     'ranges': {
-        'ra_encoder_range': 100,  # ra_positive - ra_negative
-        'dec_encoder_range': 100,  # dec_positive - dec_negative
+        'ra_encoder_range': 4488363,  # ra_positive - ra_negative
+        'dec_encoder_range': 4538362,  # dec_positive - dec_negative
     },
 
     # declination mechanical limits in degrees
@@ -55,4 +55,4 @@ coord = MountCoordinateTransformer(test_calibration_data)
 
 import asyncio
 
-asyncio.run(coord.astro_ha_dec_to_encoder_steps(5, -85))
+print(asyncio.run(coord.astro_ha_dec_to_encoder_steps(-9, -85)))
