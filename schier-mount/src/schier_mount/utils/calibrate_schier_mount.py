@@ -37,7 +37,7 @@ class TelescopeCalibrator:
 
         # Calibration parameters
         self.search_velocity = 40000  # Slow speed for safety
-        self.search_acceleration = 20000
+        self.search_acceleration = 30000
         self.position_tolerance = 50  # Encoder counts tolerance for detecting limits
         self.status_check_interval = 0.5  # seconds
         self.movement_timeout = 600  # seconds max per axis movement
@@ -84,10 +84,6 @@ class TelescopeCalibrator:
             Tuple of (negative_limit, positive_limit) encoder positions
         """
         self.logger.info(f"Starting {axis.value.upper()} axis limit detection")
-
-        # Set safe velocity and acceleration
-        await self.comm.set_acceleration(self.search_acceleration, self.search_acceleration)
-        await self.comm.set_velocity(self.search_velocity, self.search_velocity)
 
         # Find negative limit first
         self.logger.info(f"Searching for {axis.value} negative limit")
@@ -201,6 +197,11 @@ class TelescopeCalibrator:
         try:
             # Stop any current movement
             await self.comm.stop()
+
+            # Set safe velocity and acceleration
+            await self.comm.set_acceleration(self.search_acceleration, self.search_acceleration)
+            await self.comm.set_velocity(self.search_velocity, self.search_velocity)
+
             await asyncio.sleep(1)
 
             # Find RA limits
