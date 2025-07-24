@@ -172,7 +172,8 @@ Type 'quit' or 'exit' to leave the program.
                 return
 
             ra_enc, dec_enc = coord_result
-
+            # set slew
+            self._run_async(self.comm.set_velocity(40000,40000))
             # Move telescope
             result = self._run_async(self.comm.move_enc(ra_enc, dec_enc))
             if result is not None:
@@ -211,7 +212,7 @@ Type 'quit' or 'exit' to leave the program.
                 return
 
             print(f"🎯 Moving to encoder positions: RA={ra_enc}, DEC={dec_enc}...")
-
+            self._run_async(self.comm.set_velocity(40000, 40000))
             result = self._run_async(self.comm.move_enc(ra_enc, dec_enc))
             if result is not None:
                 print("✅ Telescope moving to target position")
