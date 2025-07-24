@@ -267,7 +267,7 @@ Type 'quit' or 'exit' to leave the program.
         print(f"   Flipped: {self.flipped}")
 
         result = self._run_async(
-            self.comm.set_track_sidereal(self.sidereal_rate, self.flipped)
+            self.comm.set_track_sidereal()
         )
 
         self.tracking_enabled = True
