@@ -266,9 +266,7 @@ Type 'quit' or 'exit' to leave the program.
         print(f"   Rate: {self.sidereal_rate} steps/sec")
         print(f"   Flipped: {self.flipped}")
 
-        result = self._run_async(
-            self.comm.set_track_sidereal()
-        )
+        self._run_async(self.comm.set_velocity(-100,0))
 
         self.tracking_enabled = True
         print("✅ Sidereal tracking enabled")
