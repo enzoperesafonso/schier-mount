@@ -1,7 +1,4 @@
 import asyncio
-from typing import Tuple, Optional
-from datetime import datetime
-import math
 
 # when telescope is between hours angles -6 and 6 we track the RA through east (+) to west (-) using the north (+)
 # side of the fork,
@@ -9,7 +6,7 @@ import math
 # when outside -6 to 6 hours we track the RA west (-) through east (+) using the south (-) side of the fork
 
 
-class SchierMountPointing:
+class MountCoordinateTransformer:
     """Handle telescope pointing and coordinate conversion for fork-mounted equatorial mount"""
 
     def __init__(self, calibration_data):
@@ -34,13 +31,10 @@ class SchierMountPointing:
             mech_ha_hours = ha_hours
             mech_dec_degrees = self._astro_dec_degrees_to_mech_dec_degrees(dec_degrees)
 
-        print(f"'mech ha{mech_ha_hours}', 'mech dec{mech_dec_degrees}'")
-
         # Convert to encoder positions using the MECHANICAL coordinates
         ra_enc = self._mech_hours_to_encoder(mech_ha_hours)
         dec_enc = self._mech_dec_degrees_to_encoder(mech_dec_degrees)
 
-        print(ra_enc, dec_enc)
 
         # Check bounds
         if not await self._is_within_bounds(ra_enc, dec_enc):
@@ -55,7 +49,7 @@ class SchierMountPointing:
         return True
 
 
-    async def _is_within_bounds(self, ha_enc: int, dec_enc: int) -> bool:
+    def _is_within_bounds(self, ha_enc: int, dec_enc: int) -> bool:
         """Check if encoder positions are within calibrated limits."""
         limits = self._calibration_data['limits']
         return (limits['ra_negative'] <= ha_enc <= limits['ra_positive'] and
@@ -171,26 +165,10 @@ class SchierMountPointing:
         elif mech_alt_ha_hours < -6.0:
             mech_alt_ha_hours += 12.0
 
-        print("mech_alt_ha_hours, mech_alt_dec_degrees")
         return mech_alt_ha_hours, mech_alt_dec_degrees
 
     def _reverse_under_pole_pointings(self, mech_ha_hours: float, mech_dec_degrees: float) -> tuple[float, float]:
         """
         Reverse the under-pole transformation to get back astronomical coordinates.
         """
-        # Reverse the declination inversion
-        astro_dec_degrees = 180 - mech_dec_degrees
-
-        # Reverse the HA shift
-        if mech_ha_hours > 0:
-            astro_ha_hours = mech_ha_hours + 12.0
-        else:
-            astro_ha_hours = mech_ha_hours - 12.0
-
-        # Handle wraparound for HA
-        if astro_ha_hours > 12.0:
-            astro_ha_hours -= 24.0
-        elif astro_ha_hours < -12.0:
-            astro_ha_hours += 24.0
-
-        return astro_ha_hours, astro_dec_degrees
+        pass

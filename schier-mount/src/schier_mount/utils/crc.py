@@ -1,5 +1,3 @@
-import serial
-
 # CRC lookup table
 # fmt: off
 CRCTable = [

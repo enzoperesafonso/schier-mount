@@ -1,4 +1,4 @@
-from utils.pointing import SchierMountPointing
+from utils.mount_coordinate_transformer import MountCoordinateTransformer
 
 test_calibration_data = {
     # overall calibration status
@@ -41,11 +41,18 @@ test_calibration_data = {
         'dec_angular_range': 235.0,  # Total angular range (122 - (-113))
     },
 
+    'ra_limits': {
+        # HARDCODED DO NOT TOUCH: mount maps from -6 to +6 where the + is pointing direction
+        'positive_hours': -6,  # Maximum mechanical declination
+        'negative_hours': 6,  # Minimum mechanical declination
+        'dec_angular_range': 235.0,  # Total angular range (122 - (-113))
+    },
+
 
 }
 
-telecope = SchierMountPointing(test_calibration_data)
+coord = MountCoordinateTransformer(test_calibration_data)
 
 import asyncio
 
-asyncio.run(telecope.astro_ha_dec_to_encoder_steps(5, -85))
+asyncio.run(coord.astro_ha_dec_to_encoder_steps(5, -85))

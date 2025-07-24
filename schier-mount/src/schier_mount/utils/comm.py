@@ -1,5 +1,4 @@
 import asyncio
-from enum import Enum
 from typing import Union, List, Tuple
 from aioserial import AioSerial
 
