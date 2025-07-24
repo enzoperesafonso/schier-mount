@@ -36,8 +36,8 @@ class TelescopeCalibrator:
         self.logger = self._setup_logger()
 
         # Calibration parameters
-        self.search_velocity = 40000  # Slow speed for safety
-        self.search_acceleration = 40000
+        self.search_velocity = 30000  # Slow speed for safety
+        self.search_acceleration = 10000
         self.position_tolerance = 50  # Encoder counts tolerance for detecting limits
         self.status_check_interval = 0.5  # seconds
         self.movement_timeout = 600  # seconds max per axis movement
