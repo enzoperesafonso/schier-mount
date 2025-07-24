@@ -36,11 +36,11 @@ class TelescopeCalibrator:
         self.logger = self._setup_logger()
 
         # Calibration parameters
-        self.search_velocity = 50000  # Slow speed for safety
+        self.search_velocity = 40000  # Slow speed for safety
         self.search_acceleration = 20000
-        self.position_tolerance = 100  # Encoder counts tolerance for detecting limits
+        self.position_tolerance = 50  # Encoder counts tolerance for detecting limits
         self.status_check_interval = 0.5  # seconds
-        self.movement_timeout = 300  # seconds max per axis movement
+        self.movement_timeout = 600  # seconds max per axis movement
 
         # Safety buffer around limits
         self.limits_safety_buffer = 100
@@ -156,9 +156,9 @@ class TelescopeCalibrator:
     async def _move_away_from_limit(self, axis: CalibrationAxis, limit_position: int, direction: str):
         """Move away from a limit switch to avoid mechanical stress."""
         if direction == "positive":
-            safe_position = limit_position - (self.limits_safety_buffer * 2)
-        else:
             safe_position = limit_position + (self.limits_safety_buffer * 2)
+        else:
+            safe_position = limit_position - (self.limits_safety_buffer * 2)
 
         self.logger.info(f"Moving {axis.value} away from limit to safe position: {safe_position}")
 
