@@ -94,14 +94,14 @@ class TelescopeCalibrator:
         negative_limit = await self._find_limit(axis, direction="negative")
 
         # Move away from negative limit
-        await self._move_away_from_limit(axis, negative_limit, direction="positive")
+        # await self._move_away_from_limit(axis, negative_limit, direction="positive")
 
         # Find positive limit
         self.logger.info(f"Searching for {axis.value} positive limit")
         positive_limit = await self._find_limit(axis, direction="positive")
 
         # Move away from positive limit
-        await self._move_away_from_limit(axis, positive_limit, direction="negative")
+       # await self._move_away_from_limit(axis, positive_limit, direction="negative")
 
         self.logger.info(f"{axis.value.upper()} limits found: negative={negative_limit}, positive={positive_limit}")
 
