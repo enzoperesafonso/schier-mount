@@ -249,21 +249,9 @@ Type 'quit' or 'exit' to leave the program.
                 track_start 95
                 track_start 105 true
         """
-        parts = args.split() if args else []
-
-        # Parse sidereal rate
-        if len(parts) >= 1:
-            try:
-                self.sidereal_rate = int(parts[0])
-            except ValueError:
-                print("❌ Invalid sidereal rate. Using default.")
-
-        # Parse flipped flag
-        if len(parts) >= 2:
-            self.flipped = parts[1].lower() in ['true', '1', 'yes', 'y']
 
         print(f"🌟 Starting sidereal tracking...")
-        print(f"   Rate: {self.sidereal_rate} steps/sec")
+        print(f"   Rate: {-100} steps/sec")
         print(f"   Flipped: {self.flipped}")
 
         self._run_async(self.comm.set_track_sidereal())
