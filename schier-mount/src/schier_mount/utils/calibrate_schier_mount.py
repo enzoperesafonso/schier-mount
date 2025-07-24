@@ -94,7 +94,7 @@ class TelescopeCalibrator:
         last_significant_movement_time = start_time
 
         # Tunable parameters for more robust detection
-        min_stationary_duration = 2.0  # Must be stationary for 2 seconds
+        min_stationary_duration = 10.0  # Must be stationary for 2 seconds
         position_history_size = 10  # Track last 10 positions
         significant_movement_threshold = 200  # Larger threshold for "real" movement
         max_time_without_progress = 30  # Max time without significant movement
