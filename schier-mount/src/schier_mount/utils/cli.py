@@ -254,7 +254,7 @@ Type 'quit' or 'exit' to leave the program.
         print(f"   Rate: {-100} steps/sec")
         print(f"   Flipped: {self.flipped}")
 
-        self._run_async(self.comm.send_commands(["$StopRA", "$StopDec", f"$VelRa {-100}", f"$VelDec {0}", "$RunRA", "$RunDec"]))
+        self._run_async(self.comm.send_commands(["$StopRA", "$StopDec", f"$VelRa {-100}","$PosRA -150000", "$RunRA"]))
 
 
         self.tracking_enabled = True
