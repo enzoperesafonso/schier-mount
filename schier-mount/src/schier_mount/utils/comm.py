@@ -43,7 +43,7 @@ class Comm:
         """Set the acceleration as steps/s²."""
         await self.send_commands([f"$AccelRa {ra_acc:06d}", f"$AccelDec {dec_acc:06d}"])
 
-    async def set_track_sidereal(self, sidereal_encoder_rate = -100):
+    async def set_track_sidereal(self, sidereal_encoder_rate = -1000):
         await self.send_commands(["$StopRA", "$StopDec", f"$VelRa {sidereal_encoder_rate}", f"$VelDec {0}", "$RunRA", "$RunDec"])
 
     async def send_commands(self, commands: Union[str, List[str]]) -> Union[str, List[str]]:
