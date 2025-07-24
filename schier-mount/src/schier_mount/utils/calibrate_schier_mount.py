@@ -86,13 +86,12 @@ class TelescopeCalibrator:
         self.logger.info(f"Starting {axis.value.upper()} axis limit detection")
 
         # Set safe velocity and acceleration
+        await self.comm.set_acceleration(self.search_acceleration, self.search_acceleration)
         if axis == CalibrationAxis.RA:
             await self.comm.set_velocity(self.search_velocity, 0)
-            await self.comm.set_acceleration(self.search_acceleration, 0)
+
         else:
             await self.comm.set_velocity(0, self.search_velocity)
-            await self.comm.set_acceleration(0, self.search_acceleration)
-
         # Find negative limit first
         self.logger.info(f"Searching for {axis.value} negative limit")
         negative_limit = await self._find_limit(axis, direction="negative")
