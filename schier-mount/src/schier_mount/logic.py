@@ -55,4 +55,6 @@ coord = MountCoordinateTransformer(test_calibration_data)
 
 import asyncio
 
-print(asyncio.run(coord.astro_ha_dec_to_encoder_steps(-9, -85)))
+print(asyncio.run(coord.astro_ha_dec_to_encoder_steps(0, -80)))
+
+
