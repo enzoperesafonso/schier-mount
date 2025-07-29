@@ -16,6 +16,7 @@ import logging
 from calibrate_schier_mount import TelescopeCalibrator
 from mount_coordinate_transformer import MountCoordinateTransformer
 from comm import Comm
+from dummy_comm import DummyComm
 
 
 class TelescopeCLI(cmd.Cmd):
@@ -39,8 +40,8 @@ Type 'quit' or 'exit' to leave the program.
         self.config_file = Path(config_file)
 
         # Initialize components
-        self.comm = Comm(device, baudrate)
-        self.calibrator = TelescopeCalibrator(device, baudrate, str(config_file))
+        self.comm = DummyComm() #Comm(device, baudrate)
+        self.calibrator = TelescopeCalibrator(self.comm, str(config_file))
         self.transformer: Optional[MountCoordinateTransformer] = None
         self.calibration_data: Optional[Dict[str, Any]] = None
 

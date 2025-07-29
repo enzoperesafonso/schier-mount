@@ -29,9 +29,9 @@ class TelescopeCalibrator:
     including finding encoder limits and saving configuration data.
     """
 
-    def __init__(self, device: str = "/dev/ttyS0", baudrate: int = 9600,
+    def __init__(self, Comm,
                  config_file: str = "telescope_config.yaml"):
-        self.comm = Comm(device, baudrate)
+        self.comm = Comm
         self.config_file = Path(config_file)
         self.logger = self._setup_logger()
 
@@ -42,7 +42,7 @@ class TelescopeCalibrator:
         self.movement_timeout = 600  # seconds max per axis movement
 
         # Safety buffer around limits
-        self.limits_safety_buffer = 100
+        self.limits_safety_buffer = 500
 
         # Hardcoded mechanical limits (as specified)
         self.dec_mechanical_limits = {
