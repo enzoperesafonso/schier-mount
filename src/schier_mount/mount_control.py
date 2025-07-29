@@ -13,15 +13,6 @@ from safety import Safety
 from state import MountState, MountStatus, PierSide, TrackingMode
 
 
-class AxisStatus(IntFlag):
-    """Represents the status bits from ROTSE III Status2 commands"""
-    BRAKE_ENGAGED = 0x0001
-    AMP_DISABLED = 0x0002
-    E_STOP = 0x0004
-    NEG_LIMIT = 0x0008
-    POS_LIMIT = 0x0010
-
-
 class SlewState(Enum):
     """Enhanced states during slewing operation"""
     IDLE = "idle"
@@ -54,27 +45,24 @@ class SlewProgress:
     progress_percent: float = 0.0
     ha_velocity: float = 0.0
     dec_velocity: float = 0.0
-    ra_status: AxisStatus = AxisStatus(0)
-    dec_status: AxisStatus = AxisStatus(0)
-    last_fault: str = ""
     pier_side: PierSide = PierSide.UNKNOWN
 
 
 class MountDriver:
     """Complete driver for ROTSE III mount"""
 
-    def __init__(self, device: str = "/dev/ttyS0", baudrate: int = 9600, calibration_data: dict = None):
+    def __init__(self, device: str = "/dev/ttyS0", baudrate: int = 9600, telescope_config: dict = None):
         # Initialize communication layer
         self.comm = Comm(device, baudrate)
 
         # Initialize status coordinate transformer and safety monitor
         self.status = MountStatus()
-        self.coordinates = Coordinates(self.status, calibration_data)
-        self.safety = Safety(calibration_data)
+        self.coordinates = Coordinates(self.status, telescope_config)
+        self.safety = Safety(telescope_config)
 
         # Configuration from calibration data
-        self.config = calibration_data
-        self.default_velocity = calibration_data.get('slew_speed', 5000)
+        self.config = telescope_config
+        self.default_velocity = telescope_config.get('slew_speed', 5000)
         self.position_tolerance = 10  # encoder steps
         self.settling_time = 0.5  # seconds
         self.max_slew_time = 300  # seconds
