@@ -319,6 +319,7 @@ if __name__ == "__main__":
             # Run calibration
             config = await calibrate_telescope(
                 device="/dev/ttyS0",
+                baudrate = 9600,
                 config_file="telescope_config.yaml"
             )
             print("Calibration completed successfully!")
