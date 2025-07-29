@@ -14,7 +14,7 @@ test_calibration_data = {
     'slew_speed': 5000,
 
     'ha_steps_per_degree': 4495610 / 180,
-    'dec_steps_per_degree': 4535120 / 235,
+    'dec_steps_per_degree': 4535120 / 400,
 
     # number of steps we define as a safety buffer around all encoder hardstops
     'limits_safety_factor': 0.005,
