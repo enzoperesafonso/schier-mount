@@ -3,11 +3,11 @@ from typing import Optional, Tuple, Dict, Any
 from dataclasses import asdict
 import logging
 
-from .comm import Comm
-from .coordinates import Coordinates
-from .safety import Safety
-from .state import MountState, MountStatus, TrackingMode, PierSide
-from .tracking import Tracking
+from comm import Comm
+from coordinates import Coordinates
+from safety import Safety
+from state import MountState, MountStatus, TrackingMode, PierSide
+from tracking import Tracking
 
 logger = logging.getLogger(__name__)
 
