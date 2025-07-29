@@ -126,7 +126,7 @@ class MountDriver:
         # Convert coordinates to encoder positions
         ha_enc, dec_enc, below_pole = self.coordinates.ha_dec_to_encoder_positions(hour_angle, declination)
         self.status.pier_side = PierSide.BELOW_THE_POLE if below_pole else PierSide.NORMAL
-
+        print(ha_enc, dec_enc, below_pole)
         # Execute the slew
         try:
             await self._slew_to_encoder_position(ha_enc, dec_enc, velocity)
