@@ -1,272 +1,655 @@
 import asyncio
-from typing import Optional, Tuple, Dict, Any
-from dataclasses import asdict
+import time
 import logging
+from typing import Optional, Tuple, Dict, Any
+from dataclasses import replace
 
 from comm import Comm
 from coordinates import Coordinates
 from safety import Safety
-from state import MountState, MountStatus, TrackingMode, PierSide
-from tracking import Tracking
+from state import MountStatus, MountState, TrackingMode, PierSide
 
+# Configure logging
+logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
-class SchierMount:
-    """Main driver class for Schier telescope mount."""
+class TelescopeMount:
+    """
+    Complete telescope mount controller for fork-mounted equatorial telescope
 
-    def __init__(self, device: str = "/dev/ttyS0", baudrate: int = 9600, calibration_data: Optional[Dict] = None):
+    Features:
+    - Velocity-based tracking (sidereal and non-sidereal)
+    - Thread-safe operations with proper locking
+    - Comprehensive safety monitoring
+    - Fork mount coordinate handling with below-pole pointing
+    - Slewing with automatic tracking resume
+    - Emergency stop functionality
+    """
+
+    def __init__(self, device: str = "/dev/ttyS0", baudrate: int = 9600, calibration_data: Dict[str, Any] = None):
+        if calibration_data is None:
+            raise ValueError("calibration_data is required for mount operation")
+
+        # Validate required calibration data
+        required_keys = ['limits', 'ranges', 'ha_steps_per_degree', 'dec_steps_per_degree',
+                         'observer_latitude', 'sidereal_rate_ha_steps_per_sec']
+        for key in required_keys:
+            if key not in calibration_data:
+                raise ValueError(f"Missing required calibration data: {key}")
+
+        # Initialize core components
+        self.comm = Comm(device, baudrate)
+        self.status = MountStatus()
+        self.coordinates = Coordinates(self.status, calibration_data)
+        self.safety = Safety(calibration_data)
+
+        # Thread synchronization
+        self._command_lock = asyncio.Lock()  # Serialize all mount commands
+        self._status_lock = asyncio.Lock()  # Protect status updates
+        self._position_lock = asyncio.Lock()  # Protect position updates
+
+        # Configuration parameters
+        self._sidereal_rate_ha = calibration_data.get('sidereal_rate_ha_steps_per_sec', 100)
+        self._position_update_interval = calibration_data.get('position_update_interval', 0.1)
+        self._slew_tolerance_steps = calibration_data.get('slew_tolerance_steps', 10)
+        self._max_slew_time = calibration_data.get('max_slew_time_seconds', 300)
+        self._tracking_safety_buffer = calibration_data.get('tracking_safety_buffer_steps', 5000)
+
+        # Operational tasks
+        self._position_monitor_task = None
+        self._safety_monitor_task = None
+        self._tracking_monitor_task = None
+
+        # Movement detection
+        self._last_position = (None, None)
+        self._stationary_count = 0
+        self._stationary_threshold = 5
+
+        # Mount limits from calibration
+        limits = calibration_data['limits']
+        self._ha_pos_lim = limits['ha_positive']
+        self._ha_neg_lim = limits['ha_negative']
+        self._dec_pos_lim = limits['dec_positive']
+        self._dec_neg_lim = limits['dec_negative']
+
+    # ================================
+    #           MANAGEMENT
+    # ================================
+
+    async def initialize(self) -> bool:
+        """Initialize the mount and start monitoring tasks"""
+        async with self._command_lock:
+            try:
+                await self._set_state(MountState.INITIALIZING)
+                logger.info("Initializing telescope mount...")
+
+                # Test communication
+                await self._update_encoder_positions()
+                logger.info(f"Initial position: HA_enc={self.status.ra_encoder}, Dec_enc={self.status.dec_encoder}")
+
+                # Start monitoring tasks
+                self._position_monitor_task = asyncio.create_task(self._position_monitor())
+                self._safety_monitor_task = asyncio.create_task(self._safety_monitor())
+
+                await self._set_state(MountState.IDLE)
+                logger.info("Mount initialization complete")
+                return True
+
+            except Exception as e:
+                logger.error(f"Mount initialization failed: {e}")
+                await self._set_state(MountState.ERROR)
+                return False
+
+    async def shutdown(self):
+        """Shutdown the mount and cleanup tasks"""
+        async with self._command_lock:
+            logger.info("Shutting down telescope mount...")
+
+            # Stop tracking
+            await self._stop_tracking_internal()
+
+            # Stop all motors
+            await self.comm.stop()
+
+            # Cancel monitoring tasks
+            tasks = [self._position_monitor_task, self._safety_monitor_task, self._tracking_monitor_task]
+            for task in tasks:
+                if task and not task.done():
+                    task.cancel()
+                    try:
+                        await task
+                    except asyncio.CancelledError:
+                        pass
+
+            await self._set_state(MountState.DISCONNECTED)
+            logger.info("Mount shutdown complete")
+
+    async def home(self) -> bool:
+        """Home the telescope mount"""
+        try:
+            async with asyncio.wait_for(self._command_lock.acquire(), timeout=30.0):
+                try:
+                    if self.status.state not in [MountState.IDLE, MountState.ERROR]:
+                        logger.warning("Cannot home: mount not in idle state")
+                        return False
+
+                    # Stop any tracking first
+                    await self._stop_tracking_internal()
+
+                    await self._set_state(MountState.HOMING)
+                    logger.info("Homing telescope mount...")
+
+                    await self.comm.home()
+
+                    # Wait for homing to complete
+                    await asyncio.sleep(60.0)  # TODO: Implement proper homing detection
+
+                    await self._update_encoder_positions()
+                    await self._set_state(MountState.IDLE)
+                    logger.info("Homing complete")
+                    return True
+
+                finally:
+                    self._command_lock.release()
+
+        except asyncio.TimeoutError:
+            logger.error("Homing timed out waiting for command lock")
+            return False
+        except Exception as e:
+            logger.error(f"Homing failed: {e}")
+            await self._set_state(MountState.ERROR)
+            return False
+
+    async def emergency_stop(self):
+        """Emergency stop - highest priority, bypasses most locks"""
+        logger.warning("EMERGENCY STOP activated")
+
+        # Don't wait for command lock in emergency
+        try:
+            await asyncio.wait_for(self.comm.stop(), timeout=1.0)
+        except asyncio.TimeoutError:
+            logger.error("Emergency stop communication timed out!")
+
+        # Cancel tracking monitor
+        if self._tracking_monitor_task and not self._tracking_monitor_task.done():
+            self._tracking_monitor_task.cancel()
+
+        # Update status safely
+        async with self._status_lock:
+            self.status.tracking_mode = TrackingMode.STOPPED
+            self.status.is_moving = False
+            self.status.state = MountState.IDLE
+
+    # ================================
+    #           SLEWING
+    # ================================
+
+    async def slew_to_ha_dec(self, target_ha: float, target_dec: float) -> bool:
         """
-        Initialize the mount driver.
+        Slew to specified hour angle and declination
 
         Args:
-            device: Serial device path
-            baudrate: Baud rate for communication
-            calibration_data: Dictionary containing mount calibration parameters
+            target_ha: Target hour angle in hours (-12 to +12)
+            target_dec: Target declination in degrees (-90 to +90)
         """
-        self._comm = Comm(device, baudrate)
-        self._status = MountStatus()
-        self._calibration_data = calibration_data or {}
+        try:
+            async with asyncio.wait_for(self._command_lock.acquire(), timeout=30.0):
+                try:
+                    if self.status.state not in [MountState.IDLE, MountState.TRACKING]:
+                        logger.warning(f"Cannot slew: mount in state {self.status.state}")
+                        return False
 
-        # Initialize subsystems
-        self._coordinates = Coordinates(self._status, self._calibration_data)
-        self._safety = Safety(self._calibration_data)
-        self._tracking = Tracking(self._status)
+                    # Remember tracking state
+                    was_tracking = self.status.tracking_mode != TrackingMode.STOPPED
+                    tracking_mode = self.status.tracking_mode
 
-        # Movement parameters
-        self._slew_rate = 1.0  # Default slew rate in deg/s
-        self._tracking_rate = 15.041  # Sidereal rate in arcsec/s
+                    # Stop tracking first
+                    await self._stop_tracking_internal()
 
-    async def connect(self) -> None:
-        """Initialize connection to the mount."""
-        if self._status.state != MountState.DISCONNECTED:
-            return
+                    # Convert to encoder positions
+                    target_ha_enc, target_dec_enc, below_pole = self.coordinates.ha_dec_to_encoder_positions(
+                        target_ha, target_dec)
 
-        self._status.state = MountState.INITIALIZING
-        logger.info("Connecting to mount...")
+                    # Safety check
+                    if not self.safety.enc_position_is_within_safety_limits(target_ha_enc, target_dec_enc):
+                        logger.error(f"Slew target outside safety limits: HA={target_ha:.2f}h, Dec={target_dec:.2f}°")
+                        return False
+
+                    # Update target position
+                    await self._update_status(
+                        target_hour_angle=target_ha,
+                        target_declination=target_dec,
+                        target_ra_encoder=target_ha_enc,
+                        target_dec_encoder=target_dec_enc,
+                        pier_side=PierSide.BELOW_THE_POLE if below_pole else PierSide.NORMAL
+                    )
+
+                    # Execute slew
+                    success = await self._execute_slew(target_ha_enc, target_dec_enc)
+
+                    # Restart tracking if it was on before
+                    if success and was_tracking:
+                        if tracking_mode == TrackingMode.SIDEREAL:
+                            await asyncio.sleep(0.5)  # Let mount settle
+                            await self.start_sidereal_tracking()
+
+                    return success
+
+                finally:
+                    self._command_lock.release()
+
+        except asyncio.TimeoutError:
+            logger.error("Slew command timed out waiting for command lock")
+            return False
+        except Exception as e:
+            logger.error(f"Slew failed: {e}")
+            await self._set_state(MountState.ERROR)
+            return False
+
+    async def _execute_slew(self, target_ha_enc: int, target_dec_enc: int) -> bool:
+        """Execute the actual slew movement"""
+        await self._set_state(MountState.SLEWING)
+        self.status.slew_start_time = time.time()
+        await self._update_status(is_moving=True)
+
+        logger.info(f"Slewing to HA_enc={target_ha_enc}, Dec_enc={target_dec_enc}")
 
         try:
-            # Get initial position
-            await self.update_position()
-            self._status.state = MountState.IDLE
-            logger.info("Mount connected successfully")
+            # Stop all movement
+            await self.comm.stop()
+
+            # Set slew speeds
+            slew_speed_ha = 50000  # steps/sec
+            slew_speed_dec = 50000
+            await self.comm.set_velocity(slew_speed_ha, slew_speed_dec)
+
+            # Start the slew
+            await self.comm.move_enc(target_ha_enc, target_dec_enc)
+
+            # Wait for slew to complete
+            slew_complete = await self._wait_for_slew_completion(target_ha_enc, target_dec_enc)
+
+            if slew_complete:
+                logger.info("Slew completed successfully")
+                await self._set_state(MountState.IDLE)
+                await self._update_status(is_moving=False)
+                return True
+            else:
+                logger.error("Slew timed out or failed")
+                await self.comm.stop()
+                await self._set_state(MountState.ERROR)
+                await self._update_status(is_moving=False)
+                return False
+
         except Exception as e:
-            self._status.state = MountState.ERROR
-            logger.error(f"Connection failed: {str(e)}")
-            raise
+            logger.error(f"Slew execution failed: {e}")
+            await self.comm.stop()
+            await self._set_state(MountState.ERROR)
+            await self._update_status(is_moving=False)
+            return False
 
-    async def disconnect(self) -> None:
-        """Disconnect from the mount."""
-        if self._status.state == MountState.DISCONNECTED:
-            return
+    async def _wait_for_slew_completion(self, target_ha_enc: int, target_dec_enc: int) -> bool:
+        """Wait for slew to complete within tolerance"""
+        timeout = self._max_slew_time
+        start_time = time.time()
 
-        logger.info("Disconnecting from mount...")
-        await self.stop()
-        self._status.state = MountState.DISCONNECTED
+        while time.time() - start_time < timeout:
+            await self._update_encoder_positions()
 
-    async def home(self) -> None:
-        """Home the mount (move to index positions)."""
-        if not self._check_ready():
-            return
+            if (self.status.ra_encoder is not None and self.status.dec_encoder is not None):
+                ha_error = abs(self.status.ra_encoder - target_ha_enc)
+                dec_error = abs(self.status.dec_encoder - target_dec_enc)
 
-        self._status.state = MountState.HOMING
-        logger.info("Homing mount...")
+                if ha_error <= self._slew_tolerance_steps and dec_error <= self._slew_tolerance_steps:
+                    # Wait a bit more to ensure mount has settled
+                    await asyncio.sleep(0.5)
+                    return True
 
+            await asyncio.sleep(0.2)
+
+        return False
+
+    # ================================
+    # TRACKING OPERATIONS
+    # ================================
+
+    async def start_sidereal_tracking(self) -> bool:
+        """Start sidereal tracking using velocity-based method"""
         try:
-            await self._comm.home()
-            await self.update_position()
-            self._status.state = MountState.IDLE
-            logger.info("Mount homed successfully")
+            async with asyncio.wait_for(self._command_lock.acquire(), timeout=10.0):
+                try:
+                    if self.status.state not in [MountState.IDLE, MountState.TRACKING]:
+                        logger.warning(f"Cannot start tracking: mount in state {self.status.state}")
+                        return False
+
+                    logger.info("Starting sidereal tracking")
+
+                    # Stop any existing movement
+                    await self.comm.stop()
+
+                    # Set sidereal velocity (HA only, Dec = 0)
+                    await self.comm.set_velocity(int(self._sidereal_rate_ha), 0)
+
+                    # Set HA target far beyond positive limit to track continuously westward
+                    distant_ha_target = self._ha_pos_lim + 1000000
+                    await self.comm.move_ra_enc(distant_ha_target)
+
+                    # Start tracking monitor
+                    if self._tracking_monitor_task and not self._tracking_monitor_task.done():
+                        self._tracking_monitor_task.cancel()
+
+                    self._tracking_monitor_task = asyncio.create_task(
+                        self._velocity_tracking_monitor(self._sidereal_rate_ha, 0.0)
+                    )
+
+                    await self._update_status(tracking_mode=TrackingMode.SIDEREAL)
+                    await self._set_state(MountState.TRACKING)
+
+                    logger.info("Sidereal tracking started")
+                    return True
+
+                finally:
+                    self._command_lock.release()
+
+        except asyncio.TimeoutError:
+            logger.error("Start tracking timed out waiting for command lock")
+            return False
         except Exception as e:
-            self._status.state = MountState.ERROR
-            logger.error(f"Homing failed: {str(e)}")
-            raise
+            logger.error(f"Failed to start sidereal tracking: {e}")
+            await self._set_state(MountState.ERROR)
+            return False
 
-    async def stop(self) -> None:
-        """Stop all mount movement."""
-        logger.info("Stopping mount movement")
-        await self._comm.stop()
-        self._status.is_moving = False
-        await self._tracking.stop_track()
-        await self.update_position()
-
-        if self._status.state not in [MountState.PARKED, MountState.ERROR]:
-            self._status.state = MountState.IDLE
-
-    async def park(self) -> None:
-        """Park the mount to a safe position."""
-        if not self._check_ready():
-            return
-
-        self._status.state = MountState.PARKING
-        logger.info("Parking mount...")
-
-        try:
-            # Move to home position (implementation specific)
-            await self.home()
-            self._status.state = MountState.PARKED
-            logger.info("Mount parked successfully")
-        except Exception as e:
-            self._status.state = MountState.ERROR
-            logger.error(f"Parking failed: {str(e)}")
-            raise
-
-    async def move_to_ha_dec(self, ha: float, dec: float) -> None:
+    async def start_non_sidereal_tracking(self, ha_rate_steps_per_sec: float, dec_rate_steps_per_sec: float) -> bool:
         """
-        Move mount to specified hour angle and declination.
+        Start non-sidereal tracking with custom rates
 
         Args:
-            ha: Hour angle in hours (-12 to +12)
-            dec: Declination in degrees (-90 to +90)
+            ha_rate_steps_per_sec: HA tracking rate in steps per second (positive = westward)
+            dec_rate_steps_per_sec: Dec tracking rate in steps per second (positive = northward)
         """
-        if not self._check_ready():
-            return
-
-        logger.info(f"Moving to HA: {ha}h, Dec: {dec}°")
-        self._status.state = MountState.SLEWING
-        self._status.is_moving = True
-        self._status.slew_start_time = asyncio.get_event_loop().time()
-
-        # Convert coordinates to encoder positions
-        ha_enc, dec_enc, below_pole = self._coordinates.ha_dec_to_encoder_positions(ha, dec)
-
-        # Update pier side information
-        self._status.pier_side = PierSide.BELOW_THE_POLE if below_pole else PierSide.NORMAL
-
-        # Check safety limits
-        if not self._safety.enc_position_is_within_safety_limits(ha_enc, dec_enc):
-            logger.error("Target position exceeds safety limits")
-            self._status.state = MountState.ERROR
-            return
-
-        # Update target position
-        self._status.target_hour_angle = ha
-        self._status.target_declination = dec
-        self._status.target_ra_encoder = ha_enc
-        self._status.target_dec_encoder = dec_enc
-
         try:
-            # Move to position
-            await self._comm.move_enc(ha_enc, dec_enc)
+            async with asyncio.wait_for(self._command_lock.acquire(), timeout=10.0):
+                try:
+                    if self.status.state not in [MountState.IDLE, MountState.TRACKING]:
+                        logger.warning(f"Cannot start tracking: mount in state {self.status.state}")
+                        return False
 
-            # Wait until movement is complete (simplified)
-            while self._status.is_moving:
-                await self.update_position()
-                await asyncio.sleep(0.1)
+                    logger.info(
+                        f"Starting non-sidereal tracking: HA={ha_rate_steps_per_sec:.2f}, Dec={dec_rate_steps_per_sec:.2f} steps/sec")
 
-            self._status.state = MountState.IDLE
-            logger.info("Movement completed successfully")
+                    # Stop any existing movement
+                    await self.comm.stop()
+
+                    # Set custom tracking velocities
+                    await self.comm.set_velocity(int(abs(ha_rate_steps_per_sec)), int(abs(dec_rate_steps_per_sec)))
+
+                    # Set targets based on rate directions - far beyond limits for continuous movement
+                    if ha_rate_steps_per_sec >= 0:
+                        ha_target = self._ha_pos_lim + 1000000  # Track westward (positive)
+                    else:
+                        ha_target = self._ha_neg_lim - 1000000  # Track eastward (negative)
+
+                    if dec_rate_steps_per_sec >= 0:
+                        dec_target = self._dec_pos_lim + 1000000  # Track northward
+                    else:
+                        dec_target = self._dec_neg_lim - 1000000  # Track southward
+
+                    # Start tracking movement
+                    if dec_rate_steps_per_sec == 0:
+                        # HA-only tracking
+                        await self.comm.move_ra_enc(ha_target)
+                    else:
+                        # Both axes tracking
+                        await self.comm.move_enc(ha_target, dec_target)
+
+                    # Start tracking monitor
+                    if self._tracking_monitor_task and not self._tracking_monitor_task.done():
+                        self._tracking_monitor_task.cancel()
+
+                    self._tracking_monitor_task = asyncio.create_task(
+                        self._velocity_tracking_monitor(ha_rate_steps_per_sec, dec_rate_steps_per_sec)
+                    )
+
+                    await self._update_status(tracking_mode=TrackingMode.NON_SIDEREAL)
+                    await self._set_state(MountState.TRACKING)
+
+                    logger.info("Non-sidereal tracking started")
+                    return True
+
+                finally:
+                    self._command_lock.release()
+
+        except asyncio.TimeoutError:
+            logger.error("Start tracking timed out waiting for command lock")
+            return False
         except Exception as e:
-            self._status.state = MountState.ERROR
-            logger.error(f"Movement failed: {str(e)}")
-            raise
+            logger.error(f"Failed to start non-sidereal tracking: {e}")
+            await self._set_state(MountState.ERROR)
+            return False
 
-    async def update_position(self) -> None:
-        """Update the current position from the mount encoders."""
+    async def stop_tracking(self):
+        """Public interface to stop tracking"""
+        async with self._command_lock:
+            await self._stop_tracking_internal()
+
+    async def _stop_tracking_internal(self):
+        """Internal stop tracking without acquiring command lock"""
+        if self.status.tracking_mode != TrackingMode.STOPPED:
+            logger.info("Stopping tracking")
+
+            # Cancel tracking monitor task
+            if self._tracking_monitor_task and not self._tracking_monitor_task.done():
+                self._tracking_monitor_task.cancel()
+                try:
+                    await self._tracking_monitor_task
+                except asyncio.CancelledError:
+                    pass
+
+            # Stop all motors
+            await self.comm.stop()
+
+            await self._update_status(tracking_mode=TrackingMode.STOPPED)
+            if self.status.state == MountState.TRACKING:
+                await self._set_state(MountState.IDLE)
+
+    async def _velocity_tracking_monitor(self, ha_rate: float, dec_rate: float):
+        """Monitor velocity-based tracking for safety"""
         try:
-            ra_enc, dec_enc = await self._comm.get_encoder_positions()
+            logger.info(f"Starting velocity tracking monitor: HA={ha_rate:.2f}, Dec={dec_rate:.2f} steps/sec")
 
-            # Update encoder positions
-            self._status.ra_encoder = ra_enc
-            self._status.dec_encoder = dec_enc
+            while True:
+                await asyncio.sleep(2.0)  # Check every 2 seconds
+
+                # Check if we should still be tracking
+                if self.status.tracking_mode == TrackingMode.STOPPED:
+                    logger.info("Tracking monitor stopping - tracking mode is STOPPED")
+                    break
+
+                # Get current position safely
+                async with self._position_lock:
+                    current_ha = self.status.ra_encoder
+                    current_dec = self.status.dec_encoder
+
+                if current_ha is None or current_dec is None:
+                    logger.warning("Tracking monitor: no position data available")
+                    continue
+
+                # Check if we're approaching safety limits
+                if not self._is_safe_for_continued_tracking(current_ha, current_dec, ha_rate, dec_rate):
+                    logger.warning("Tracking stopped: approaching safety limits")
+                    await self._stop_tracking_due_to_limits()
+                    break
+
+        except asyncio.CancelledError:
+            logger.info("Velocity tracking monitor cancelled")
+        except Exception as e:
+            logger.error(f"Velocity tracking monitor error: {e}")
+            await self._set_state(MountState.ERROR)
+
+    def _is_safe_for_continued_tracking(self, current_ha: int, current_dec: int,
+                                        ha_rate: float, dec_rate: float) -> bool:
+        """Check if it's safe to continue tracking in the current direction"""
+
+        # Check HA direction and limits
+        if ha_rate > 0:  # Moving toward positive limit (westward)
+            ha_safe = current_ha < (self._ha_pos_lim - self._tracking_safety_buffer)
+        elif ha_rate < 0:  # Moving toward negative limit (eastward)
+            ha_safe = current_ha > (self._ha_neg_lim + self._tracking_safety_buffer)
+        else:  # Not moving in HA
+            ha_safe = ((self._ha_neg_lim + self._tracking_safety_buffer) < current_ha <
+                       (self._ha_pos_lim - self._tracking_safety_buffer))
+
+        # Check Dec direction and limits
+        if dec_rate > 0:  # Moving toward positive limit (northward)
+            dec_safe = current_dec < (self._dec_pos_lim - self._tracking_safety_buffer)
+        elif dec_rate < 0:  # Moving toward negative limit (southward)
+            dec_safe = current_dec > (self._dec_neg_lim + self._tracking_safety_buffer)
+        else:  # Not moving in Dec
+            dec_safe = ((self._dec_neg_lim + self._tracking_safety_buffer) < current_dec <
+                        (self._dec_pos_lim - self._tracking_safety_buffer))
+
+        return ha_safe and dec_safe
+
+    async def _stop_tracking_due_to_limits(self):
+        """Stop tracking because we're approaching limits"""
+        logger.warning("Stopping tracking due to approaching limits")
+
+        # Don't wait for command lock - this is safety-related
+        try:
+            await asyncio.wait_for(self.comm.stop(), timeout=2.0)
+        except asyncio.TimeoutError:
+            logger.error("Failed to stop tracking due to timeout")
+
+        await self._update_status(tracking_mode=TrackingMode.STOPPED)
+        if self.status.state == MountState.TRACKING:
+            await self._set_state(MountState.IDLE)
+
+    # ================================
+    # MONITORING TASKS
+    # ================================
+
+    async def _position_monitor(self):
+        """Continuously monitor mount position"""
+        try:
+            while True:
+                async with self._position_lock:
+                    await self._update_encoder_positions()
+                    await self._check_movement()
+                await asyncio.sleep(self._position_update_interval)
+        except asyncio.CancelledError:
+            logger.info("Position monitoring stopped")
+        except Exception as e:
+            logger.error(f"Position monitoring error: {e}")
+
+    async def _safety_monitor(self):
+        """Continuously monitor safety limits"""
+        try:
+            while True:
+                # Read position safely
+                async with self._position_lock:
+                    ra_enc = self.status.ra_encoder
+                    dec_enc = self.status.dec_encoder
+
+                if ra_enc is not None and dec_enc is not None:
+                    if not self.safety.enc_position_is_within_safety_limits(ra_enc, dec_enc):
+                        logger.error("SAFETY LIMIT VIOLATION - Emergency stop activated!")
+                        await self.emergency_stop()
+                        await self._set_state(MountState.ERROR)
+                        break
+
+                await asyncio.sleep(0.1)  # Check safety frequently
+        except asyncio.CancelledError:
+            logger.info("Safety monitoring stopped")
+        except Exception as e:
+            logger.error(f"Safety monitoring error: {e}")
+
+    async def _update_encoder_positions(self):
+        """Update current encoder positions (call with position_lock held)"""
+        try:
+            ra_enc, dec_enc = await self.comm.get_encoder_positions()
+
+            self.status.ra_encoder = ra_enc
+            self.status.dec_encoder = dec_enc
+            self.status.last_position_update = time.time()
 
             # Convert to HA/Dec
-            ha, dec, below_pole = self._coordinates.encoder_positions_to_ha_dec(ra_enc, dec_enc)
-            self._status.current_hour_angle = ha
-            self._status.current_declination = dec
-
-            # Update pier side information
-            self._status.pier_side = PierSide.BELOW_THE_POLE if below_pole else PierSide.NORMAL
-
-            # Check if we're still moving
-            if (self._status.target_ra_encoder is not None and
-                    self._status.target_dec_encoder is not None):
-                pos_tolerance = 100  # encoder steps tolerance
-                ra_diff = abs(ra_enc - self._status.target_ra_encoder)
-                dec_diff = abs(dec_enc - self._status.target_dec_encoder)
-                self._status.is_moving = ra_diff > pos_tolerance or dec_diff > pos_tolerance
-
-            self._status.last_position_update = asyncio.get_event_loop().time()
+            ha, dec, below_pole = self.coordinates.encoder_positions_to_ha_dec(ra_enc, dec_enc)
+            self.status.current_hour_angle = ha
+            self.status.current_declination = dec
+            self.status.pier_side = PierSide.BELOW_THE_POLE if below_pole else PierSide.NORMAL
 
         except Exception as e:
-            logger.error(f"Position update failed: {str(e)}")
-            raise
+            logger.error(f"Failed to update encoder positions: {e}")
 
-    async def track_sidereal(self) -> None:
-        """Start sidereal tracking."""
-        if not self._check_ready():
-            return
+    async def _check_movement(self):
+        """Check if mount is currently moving (call with position_lock held)"""
+        current_pos = (self.status.ra_encoder, self.status.dec_encoder)
 
-        logger.info("Starting sidereal tracking")
-        await self._tracking.track_sidereal()
-        self._status.state = MountState.TRACKING
+        if current_pos == self._last_position:
+            self._stationary_count += 1
+        else:
+            self._stationary_count = 0
 
-    async def track_non_sidereal(self, ha_rate: float, dec_rate: float) -> None:
-        """
-        Start non-sidereal tracking.
+        # Update movement status based on current state
+        if self.status.state == MountState.SLEWING:
+            self.status.is_moving = True
+        elif self.status.tracking_mode != TrackingMode.STOPPED:
+            self.status.is_moving = True
+        else:
+            self.status.is_moving = self._stationary_count < self._stationary_threshold
 
-        Args:
-            ha_rate: Hour angle tracking rate in arcsec/s
-            dec_rate: Declination tracking rate in arcsec/s
-        """
-        if not self._check_ready():
-            return
+        self._last_position = current_pos
 
-        logger.info(f"Starting non-sidereal tracking (HA: {ha_rate}, Dec: {dec_rate})")
-        await self._tracking.track_non_sidereal(ha_rate, dec_rate)
-        self._status.state = MountState.TRACKING
+    # ================================
+    # STATUS AND UTILITY METHODS
+    # ================================
 
-    async def stop_tracking(self) -> None:
-        """Stop tracking."""
-        logger.info("Stopping tracking")
-        await self._tracking.stop_track()
-        if self._status.state == MountState.TRACKING:
-            self._status.state = MountState.IDLE
+    async def _set_state(self, new_state: MountState):
+        """Thread-safe state change with logging"""
+        async with self._status_lock:
+            if self.status.state != new_state:
+                old_state = self.status.state
+                self.status.state = new_state
+                logger.info(f"Mount state changed: {old_state.value} -> {new_state.value}")
 
-    def _check_ready(self) -> bool:
-        """Check if mount is ready for operation."""
-        if self._status.state == MountState.DISCONNECTED:
-            logger.error("Mount is not connected")
-            return False
-        if self._status.state == MountState.ERROR:
-            logger.error("Mount is in error state")
-            return False
-        if self._status.state == MountState.PARKED:
-            logger.error("Mount is parked - unpark first")
-            return False
-        return True
+    async def _update_status(self, **kwargs):
+        """Thread-safe status updates"""
+        async with self._status_lock:
+            for key, value in kwargs.items():
+                if hasattr(self.status, key):
+                    setattr(self.status, key, value)
 
-    @property
-    def status(self) -> Dict[str, Any]:
-        """Return current mount status as a dictionary."""
-        return asdict(self._status)
+    def get_status(self) -> MountStatus:
+        """Get current mount status (thread-safe copy)"""
+        return replace(self.status)
 
-    @property
-    def is_connected(self) -> bool:
-        """Return True if mount is connected."""
-        return self._status.state != MountState.DISCONNECTED
-
-    @property
-    def is_moving(self) -> bool:
-        """Return True if mount is moving."""
-        return self._status.is_moving
-
-    @property
     def is_tracking(self) -> bool:
-        """Return True if mount is tracking."""
-        return self._status.tracking_mode != TrackingMode.STOPPED
+        """Check if mount is currently tracking"""
+        return self.status.tracking_mode != TrackingMode.STOPPED
 
-    async def set_slew_rate(self, rate: float) -> None:
-        """Set the slew rate in degrees per second."""
-        self._slew_rate = rate
-        # Convert to steps/s based on calibration data
-        ra_vel = int(rate * self._calibration_data.get('ha_steps_per_degree', 1))
-        dec_vel = int(rate * self._calibration_data.get('dec_steps_per_degree', 1))
-        await self._comm.set_velocity(ra_vel, dec_vel)
+    def is_slewing(self) -> bool:
+        """Check if mount is currently slewing"""
+        return self.status.state == MountState.SLEWING
 
-    async def set_acceleration(self, acceleration: float) -> None:
-        """Set the acceleration in degrees per second squared."""
-        # Convert to steps/s² based on calibration data
-        ra_acc = int(acceleration * self._calibration_data.get('ha_steps_per_degree', 1))
-        dec_acc = int(acceleration * self._calibration_data.get('dec_steps_per_degree', 1))
-        await self._comm.set_acceleration(ra_acc, dec_acc)
+    def is_idle(self) -> bool:
+        """Check if mount is idle and ready for commands"""
+        return self.status.state == MountState.IDLE
+
+    async def wait_for_state(self, target_state: MountState, timeout: float = 30.0) -> bool:
+        """Wait for the mount to reach a specific state"""
+        start_time = time.time()
+        while time.time() - start_time < timeout:
+            if self.status.state == target_state:
+                return True
+            await asyncio.sleep(0.1)
+        return False
+
+    def get_current_position(self) -> Tuple[Optional[float], Optional[float]]:
+        """Get current HA/Dec position in degrees"""
+        return self.status.current_hour_angle, self.status.current_declination
+
+    def get_target_position(self) -> Tuple[Optional[float], Optional[float]]:
+        """Get target HA/Dec position in degrees"""
+        return self.status.target_hour_angle, self.status.target_declination
+

@@ -40,7 +40,7 @@ Type 'quit' or 'exit' to leave the program.
         self.config_file = Path(config_file)
 
         # Initialize components
-        self.comm = DummyComm() #Comm(device, baudrate)
+        self.comm = Comm(device, baudrate)
         self.calibrator = TelescopeCalibrator(self.comm, str(config_file))
         self.transformer: Optional[MountCoordinateTransformer] = None
         self.calibration_data: Optional[Dict[str, Any]] = None
@@ -255,7 +255,7 @@ Type 'quit' or 'exit' to leave the program.
         print(f"   Rate: {-100} steps/sec")
         print(f"   Flipped: {self.flipped}")
 
-        self._run_async(self.comm.send_commands(["$StopRA", "$StopDec", f"$VelRa {-100}", "$PosRA -150000", "$RunRA"]))
+        self._run_async(self.comm.send_commands(["$StopRA", "$StopDec", f"$VelRa {100}", "$PosRA 150000", "$RunRA"]))
 
 
         self.tracking_enabled = True
