@@ -10,7 +10,7 @@ from pathlib import Path
 
 # Import your telescope mount classes
 try:
-    from schier_mount import TelescopeMount
+    from telescope_mount import TelescopeMount
 except ImportError as e:
     print(f"Error importing telescope_mount: {e}")
     print("Make sure telescope_mount.py is in the current directory")
@@ -42,7 +42,8 @@ async def main():
 
     # Extract settings from config
     try:
-        calibration_data = config.get('calibration', {})
+        # Your YAML structure has calibration data at the root level
+        calibration_data = config
         comm_config = config.get('communication', {})
 
         device = comm_config.get('device', '/dev/ttyS0')
@@ -50,6 +51,14 @@ async def main():
 
         print(f"Device: {device}")
         print(f"Baudrate: {baudrate}")
+
+        # Show some calibration info
+        print(f"Calibrated: {config.get('calibrated', False)}")
+        print(f"Calibration Date: {config.get('calibration_date', 'Unknown')}")
+        print(f"Observer Latitude: {config.get('observer_latitude', 'Unknown')}°")
+        print(f"HA Steps/Degree: {config.get('ha_steps_per_degree', 'Unknown')}")
+        print(f"Dec Steps/Degree: {config.get('dec_steps_per_degree', 'Unknown')}")
+        print(f"Sidereal Rate: {config.get('sidereal_rate_ha_steps_per_sec', 'Unknown')} steps/sec")
 
     except Exception as e:
         print(f"Error parsing config: {e}")
@@ -109,7 +118,23 @@ async def main():
         print(f"  Pier Side: {status.pier_side.value}")
 
         if status.ra_encoder is not None and status.dec_encoder is not None:
-            print(f"  Raw Encoders: RA={status.ra_encoder}, Dec={status.dec_encoder}")
+            print(f"  Raw Encoders: HA={status.ra_encoder}, Dec={status.dec_encoder}")
+
+            # Show limits information
+            limits = config.get('limits', {})
+            print(f"\nEncoder Limits:")
+            print(f"  HA: {limits.get('ha_negative', 'Unknown')} to {limits.get('ha_positive', 'Unknown')}")
+            print(f"  Dec: {limits.get('dec_negative', 'Unknown')} to {limits.get('dec_positive', 'Unknown')}")
+
+            # Show current position relative to limits
+            ha_range = limits.get('ha_positive', 0) - limits.get('ha_negative', 0)
+            dec_range = limits.get('dec_positive', 0) - limits.get('dec_negative', 0)
+
+            if ha_range > 0 and dec_range > 0:
+                ha_percent = (status.ra_encoder - limits.get('ha_negative', 0)) / ha_range * 100
+                dec_percent = (status.dec_encoder - limits.get('dec_negative', 0)) / dec_range * 100
+
+                print(f"  Position within limits: HA={ha_percent:.1f}%, Dec={dec_percent:.1f}%")
 
         # Clean shutdown
         print("\nShutting down...")
