@@ -10,7 +10,7 @@ from pathlib import Path
 
 # Import your telescope mount classes
 try:
-    from telescope_mount import TelescopeMount
+    from schier_mount import TelescopeMount
 except ImportError as e:
     print(f"Error importing telescope_mount: {e}")
     print("Make sure telescope_mount.py is in the current directory")
