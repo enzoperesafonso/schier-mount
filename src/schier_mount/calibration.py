@@ -36,21 +36,21 @@ class TelescopeCalibrator:
 
         # Calibration parameters
         self.search_velocity = 40000  # Slow speed for safety
-        self.position_tolerance = 30  # Encoder counts tolerance for detecting limits
+        self.position_tolerance = 10  # Encoder counts tolerance for detecting limits
         self.status_check_interval = 0.5  # seconds
         self.movement_timeout = 600  # seconds max per axis movement
 
         # Safety buffer around limits
         self.limits_safety_buffer = 500
 
-        # Observatory configuration - modify this for your location
+        # Observatory configuration
         self.observer_latitude = -25.7479  # Your observatory latitude
 
-        # Mount specifications - modify these based on your actual mount
+        # Mount specifications
         self.ha_steps_per_degree = 3000  # Your mount's HA resolution
-        self.dec_steps_per_degree = 2000  # Your mount's DEC resolution
+        self.dec_steps_per_degree = 19408  # Your mount's DEC resolution
         self.sidereal_rate_ha_steps_per_sec = 100  # Sidereal tracking rate
-        self.tracking_safety_buffer_steps = 5000  # Safety margin
+        self.tracking_safety_buffer_steps = 2500  # Safety margin
         self.limits_safety_factor = 0.05  # 5% additional safety buffer
 
     def _setup_logger(self) -> logging.Logger:
@@ -221,7 +221,7 @@ class TelescopeCalibrator:
                     'ha_encoder_range': ha_encoder_range,
                     'dec_encoder_range': dec_encoder_range
                 },
-                'ha_steps_per_degree': self.ha_steps_per_degree,
+                'ha_steps_per_degree': ha_encoder_range / 180,
                 'dec_steps_per_degree': self.dec_steps_per_degree,
                 'sidereal_rate_ha_steps_per_sec': self.sidereal_rate_ha_steps_per_sec,
                 'tracking_safety_buffer_steps': self.tracking_safety_buffer_steps,
