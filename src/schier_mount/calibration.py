@@ -223,7 +223,7 @@ class TelescopeCalibrator:
                 },
                 'ha_steps_per_degree': ha_encoder_range / 180,
                 'dec_steps_per_degree': self.dec_steps_per_degree,
-                'sidereal_rate_ha_steps_per_sec': (ha_encoder_range * 2) / 86164.0905,
+                'sidereal_rate_ha_steps_per_sec': (ha_encoder_range * 2) / 86164.0905,  # (steps/degree x 360 degrees) / 86164.0905 seconds
                 'tracking_safety_buffer_steps': self.tracking_safety_buffer_steps,
                 'limits_safety_factor': self.limits_safety_factor
             }
