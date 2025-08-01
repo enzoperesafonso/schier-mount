@@ -44,7 +44,7 @@ class TelescopeCalibrator:
         self.limits_safety_buffer = 500
 
         # Observatory configuration
-        self.observer_latitude = -25.7479  # Your observatory latitude
+        self.observer_latitude = -23.2716 # HESS Latitude
 
         # Mount specifications
         self.ha_steps_per_degree = 3000  # Your mount's HA resolution
