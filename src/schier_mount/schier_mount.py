@@ -330,16 +330,25 @@ class TelescopeMount:
                 logger.warning(f"Cannot start tracking: mount in state {self.status.state}")
                 return False
 
-            logger.info("Starting sidereal tracking")
-
             # Stop any existing movement
             await self.comm.stop()
 
-            # Set sidereal velocity (HA only, Dec = 0)
-            await self.comm.set_velocity(int(self._sidereal_rate_ha), 0)
+            # Determine tracking direction based on pier side
+            if self.status.pier_side == PierSide.BELOW_THE_POLE:
+                # Below pole: track eastward (negative HA direction)
+                tracking_rate = -self._sidereal_rate_ha
+                distant_ha_target = self._ha_neg_lim - 1000000
+                logger.info("Starting sidereal tracking (below-pole mode: eastward)")
+            else:
+                # Normal: track westward (positive HA direction)
+                tracking_rate = self._sidereal_rate_ha
+                distant_ha_target = self._ha_pos_lim + 1000000
+                logger.info("Starting sidereal tracking (normal mode: westward)")
 
-            # Set HA target far beyond positive limit to track continuously westward
-            distant_ha_target = self._ha_pos_lim + 1000000
+            # Set sidereal velocity (HA only, Dec = 0)
+            await self.comm.set_velocity(int(abs(tracking_rate)), 0)
+
+            # Set HA target far beyond limit to track continuously
             await self.comm.move_ra_enc(distant_ha_target)
 
             # Start tracking monitor
@@ -347,13 +356,14 @@ class TelescopeMount:
                 self._tracking_monitor_task.cancel()
 
             self._tracking_monitor_task = asyncio.create_task(
-                self._velocity_tracking_monitor(self._sidereal_rate_ha, 0.0)
+                self._velocity_tracking_monitor(tracking_rate, 0.0)
             )
 
             await self._update_status(tracking_mode=TrackingMode.SIDEREAL)
             await self._set_state(MountState.TRACKING)
 
-            logger.info("Sidereal tracking started")
+            logger.info(
+                f"Sidereal tracking started - Rate: {tracking_rate:.1f} steps/sec, Pier side: {self.status.pier_side.value}")
             return True
 
         except Exception as e:
