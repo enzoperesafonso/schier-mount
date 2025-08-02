@@ -337,12 +337,12 @@ class TelescopeMount:
             if self.status.pier_side == PierSide.BELOW_THE_POLE:
                 # Below pole: track eastward (negative HA direction)
                 tracking_rate = -self._sidereal_rate_ha
-                distant_ha_target = self._ha_neg_lim - 1000000
+                distant_ha_target = self._ha_pos_lim + 1000000
                 logger.info("Starting sidereal tracking (below-pole mode: eastward)")
             else:
                 # Normal: track westward (positive HA direction)
                 tracking_rate = self._sidereal_rate_ha
-                distant_ha_target = self._ha_pos_lim + 1000000
+                distant_ha_target = self._ha_neg_lim - 1000000
                 logger.info("Starting sidereal tracking (normal mode: westward)")
 
             # Set sidereal velocity (HA only, Dec = 0)
