@@ -336,7 +336,7 @@ class TelescopeMount:
             await self.comm.stop()
 
             # Set sidereal velocity (HA only, Dec = 0)
-            await self.comm.set_velocity(int(self._sidereal_rate_ha), 0)
+            await self.comm.set_velocity(int(1000), 0) #self._sidereal_rate_ha
 
             # Set HA target far beyond positive limit to track continuously westward
             distant_ha_target = self._ha_pos_lim + 1000000
