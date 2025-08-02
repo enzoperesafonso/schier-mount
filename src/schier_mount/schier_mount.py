@@ -128,38 +128,39 @@ class TelescopeMount:
     async def home(self) -> bool:
         """Home the telescope mount"""
         try:
-            async with asyncio.wait_for(self._command_lock.acquire(), timeout=30.0):
-                try:
-                    if self.status.state not in [MountState.IDLE, MountState.ERROR]:
-                        logger.warning("Cannot home: mount not in idle state")
-                        return False
-
-                    # Stop any tracking first
-                    await self._stop_tracking_internal()
-
-                    await self._set_state(MountState.HOMING)
-                    logger.info("Homing telescope mount...")
-
-                    await self.comm.home()
-
-                    # Wait for homing to complete
-                    await asyncio.sleep(60.0)  # TODO: Implement proper homing detection
-
-                    await self._update_encoder_positions()
-                    await self._set_state(MountState.IDLE)
-                    logger.info("Homing complete")
-                    return True
-
-                finally:
-                    self._command_lock.release()
-
+            # Acquire lock with timeout
+            await asyncio.wait_for(self._command_lock.acquire(), timeout=30.0)
         except asyncio.TimeoutError:
             logger.error("Homing timed out waiting for command lock")
             return False
+
+        try:
+            if self.status.state not in [MountState.IDLE, MountState.ERROR]:
+                logger.warning("Cannot home: mount not in idle state")
+                return False
+
+            # Stop any tracking first
+            await self._stop_tracking_internal()
+
+            await self._set_state(MountState.HOMING)
+            logger.info("Homing telescope mount...")
+
+            await self.comm.home()
+
+            # Wait for homing to complete
+            await asyncio.sleep(60.0)  # TODO: Implement proper homing detection
+
+            await self._update_encoder_positions()
+            await self._set_state(MountState.IDLE)
+            logger.info("Homing complete")
+            return True
+
         except Exception as e:
             logger.error(f"Homing failed: {e}")
             await self._set_state(MountState.ERROR)
             return False
+        finally:
+            self._command_lock.release()
 
     async def emergency_stop(self):
         """Emergency stop - highest priority, bypasses most locks"""
@@ -194,58 +195,59 @@ class TelescopeMount:
             target_dec: Target declination in degrees (-90 to +90)
         """
         try:
-            async with asyncio.wait_for(self._command_lock.acquire(), timeout=30.0):
-                try:
-                    if self.status.state not in [MountState.IDLE, MountState.TRACKING]:
-                        logger.warning(f"Cannot slew: mount in state {self.status.state}")
-                        return False
-
-                    # Remember tracking state
-                    was_tracking = self.status.tracking_mode != TrackingMode.STOPPED
-                    tracking_mode = self.status.tracking_mode
-
-                    # Stop tracking first
-                    await self._stop_tracking_internal()
-
-                    # Convert to encoder positions
-                    target_ha_enc, target_dec_enc, below_pole = self.coordinates.ha_dec_to_encoder_positions(
-                        target_ha, target_dec)
-
-                    # Safety check
-                    if not self.safety.enc_position_is_within_safety_limits(target_ha_enc, target_dec_enc):
-                        logger.error(f"Slew target outside safety limits: HA={target_ha:.2f}h, Dec={target_dec:.2f}°")
-                        return False
-
-                    # Update target position
-                    await self._update_status(
-                        target_hour_angle=target_ha,
-                        target_declination=target_dec,
-                        target_ra_encoder=target_ha_enc,
-                        target_dec_encoder=target_dec_enc,
-                        pier_side=PierSide.BELOW_THE_POLE if below_pole else PierSide.NORMAL
-                    )
-
-                    # Execute slew
-                    success = await self._execute_slew(target_ha_enc, target_dec_enc)
-
-                    # Restart tracking if it was on before
-                    if success and was_tracking:
-                        if tracking_mode == TrackingMode.SIDEREAL:
-                            await asyncio.sleep(0.5)  # Let mount settle
-                            await self.start_sidereal_tracking()
-
-                    return success
-
-                finally:
-                    self._command_lock.release()
-
+            # Acquire lock with timeout
+            await asyncio.wait_for(self._command_lock.acquire(), timeout=30.0)
         except asyncio.TimeoutError:
             logger.error("Slew command timed out waiting for command lock")
             return False
+
+        try:
+            if self.status.state not in [MountState.IDLE, MountState.TRACKING]:
+                logger.warning(f"Cannot slew: mount in state {self.status.state}")
+                return False
+
+            # Remember tracking state
+            was_tracking = self.status.tracking_mode != TrackingMode.STOPPED
+            tracking_mode = self.status.tracking_mode
+
+            # Stop tracking first
+            await self._stop_tracking_internal()
+
+            # Convert to encoder positions
+            target_ha_enc, target_dec_enc, below_pole = self.coordinates.ha_dec_to_encoder_positions(
+                target_ha, target_dec)
+
+            # Safety check
+            if not self.safety.enc_position_is_within_safety_limits(target_ha_enc, target_dec_enc):
+                logger.error(f"Slew target outside safety limits: HA={target_ha:.2f}h, Dec={target_dec:.2f}°")
+                return False
+
+            # Update target position
+            await self._update_status(
+                target_hour_angle=target_ha,
+                target_declination=target_dec,
+                target_ra_encoder=target_ha_enc,
+                target_dec_encoder=target_dec_enc,
+                pier_side=PierSide.BELOW_THE_POLE if below_pole else PierSide.NORMAL
+            )
+
+            # Execute slew
+            success = await self._execute_slew(target_ha_enc, target_dec_enc)
+
+            # Restart tracking if it was on before
+            if success and was_tracking:
+                if tracking_mode == TrackingMode.SIDEREAL:
+                    await asyncio.sleep(0.5)  # Let mount settle
+                    await self.start_sidereal_tracking()
+
+            return success
+
         except Exception as e:
             logger.error(f"Slew failed: {e}")
             await self._set_state(MountState.ERROR)
             return False
+        finally:
+            self._command_lock.release()
 
     async def _execute_slew(self, target_ha_enc: int, target_dec_enc: int) -> bool:
         """Execute the actual slew movement"""
@@ -317,48 +319,49 @@ class TelescopeMount:
     async def start_sidereal_tracking(self) -> bool:
         """Start sidereal tracking using velocity-based method"""
         try:
-            async with asyncio.wait_for(self._command_lock.acquire(), timeout=10.0):
-                try:
-                    if self.status.state not in [MountState.IDLE, MountState.TRACKING]:
-                        logger.warning(f"Cannot start tracking: mount in state {self.status.state}")
-                        return False
-
-                    logger.info("Starting sidereal tracking")
-
-                    # Stop any existing movement
-                    await self.comm.stop()
-
-                    # Set sidereal velocity (HA only, Dec = 0)
-                    await self.comm.set_velocity(int(self._sidereal_rate_ha), 0)
-
-                    # Set HA target far beyond positive limit to track continuously westward
-                    distant_ha_target = self._ha_pos_lim + 1000000
-                    await self.comm.move_ra_enc(distant_ha_target)
-
-                    # Start tracking monitor
-                    if self._tracking_monitor_task and not self._tracking_monitor_task.done():
-                        self._tracking_monitor_task.cancel()
-
-                    self._tracking_monitor_task = asyncio.create_task(
-                        self._velocity_tracking_monitor(self._sidereal_rate_ha, 0.0)
-                    )
-
-                    await self._update_status(tracking_mode=TrackingMode.SIDEREAL)
-                    await self._set_state(MountState.TRACKING)
-
-                    logger.info("Sidereal tracking started")
-                    return True
-
-                finally:
-                    self._command_lock.release()
-
+            # Acquire lock with timeout
+            await asyncio.wait_for(self._command_lock.acquire(), timeout=10.0)
         except asyncio.TimeoutError:
             logger.error("Start tracking timed out waiting for command lock")
             return False
+
+        try:
+            if self.status.state not in [MountState.IDLE, MountState.TRACKING]:
+                logger.warning(f"Cannot start tracking: mount in state {self.status.state}")
+                return False
+
+            logger.info("Starting sidereal tracking")
+
+            # Stop any existing movement
+            await self.comm.stop()
+
+            # Set sidereal velocity (HA only, Dec = 0)
+            await self.comm.set_velocity(int(self._sidereal_rate_ha), 0)
+
+            # Set HA target far beyond positive limit to track continuously westward
+            distant_ha_target = self._ha_pos_lim + 1000000
+            await self.comm.move_ra_enc(distant_ha_target)
+
+            # Start tracking monitor
+            if self._tracking_monitor_task and not self._tracking_monitor_task.done():
+                self._tracking_monitor_task.cancel()
+
+            self._tracking_monitor_task = asyncio.create_task(
+                self._velocity_tracking_monitor(self._sidereal_rate_ha, 0.0)
+            )
+
+            await self._update_status(tracking_mode=TrackingMode.SIDEREAL)
+            await self._set_state(MountState.TRACKING)
+
+            logger.info("Sidereal tracking started")
+            return True
+
         except Exception as e:
             logger.error(f"Failed to start sidereal tracking: {e}")
             await self._set_state(MountState.ERROR)
             return False
+        finally:
+            self._command_lock.release()
 
     async def start_non_sidereal_tracking(self, ha_rate_steps_per_sec: float, dec_rate_steps_per_sec: float) -> bool:
         """
@@ -369,64 +372,65 @@ class TelescopeMount:
             dec_rate_steps_per_sec: Dec tracking rate in steps per second (positive = northward)
         """
         try:
-            async with asyncio.wait_for(self._command_lock.acquire(), timeout=10.0):
-                try:
-                    if self.status.state not in [MountState.IDLE, MountState.TRACKING]:
-                        logger.warning(f"Cannot start tracking: mount in state {self.status.state}")
-                        return False
-
-                    logger.info(
-                        f"Starting non-sidereal tracking: HA={ha_rate_steps_per_sec:.2f}, Dec={dec_rate_steps_per_sec:.2f} steps/sec")
-
-                    # Stop any existing movement
-                    await self.comm.stop()
-
-                    # Set custom tracking velocities
-                    await self.comm.set_velocity(int(abs(ha_rate_steps_per_sec)), int(abs(dec_rate_steps_per_sec)))
-
-                    # Set targets based on rate directions - far beyond limits for continuous movement
-                    if ha_rate_steps_per_sec >= 0:
-                        ha_target = self._ha_pos_lim + 1000000  # Track westward (positive)
-                    else:
-                        ha_target = self._ha_neg_lim - 1000000  # Track eastward (negative)
-
-                    if dec_rate_steps_per_sec >= 0:
-                        dec_target = self._dec_pos_lim + 1000000  # Track northward
-                    else:
-                        dec_target = self._dec_neg_lim - 1000000  # Track southward
-
-                    # Start tracking movement
-                    if dec_rate_steps_per_sec == 0:
-                        # HA-only tracking
-                        await self.comm.move_ra_enc(ha_target)
-                    else:
-                        # Both axes tracking
-                        await self.comm.move_enc(ha_target, dec_target)
-
-                    # Start tracking monitor
-                    if self._tracking_monitor_task and not self._tracking_monitor_task.done():
-                        self._tracking_monitor_task.cancel()
-
-                    self._tracking_monitor_task = asyncio.create_task(
-                        self._velocity_tracking_monitor(ha_rate_steps_per_sec, dec_rate_steps_per_sec)
-                    )
-
-                    await self._update_status(tracking_mode=TrackingMode.NON_SIDEREAL)
-                    await self._set_state(MountState.TRACKING)
-
-                    logger.info("Non-sidereal tracking started")
-                    return True
-
-                finally:
-                    self._command_lock.release()
-
+            # Acquire lock with timeout
+            await asyncio.wait_for(self._command_lock.acquire(), timeout=10.0)
         except asyncio.TimeoutError:
             logger.error("Start tracking timed out waiting for command lock")
             return False
+
+        try:
+            if self.status.state not in [MountState.IDLE, MountState.TRACKING]:
+                logger.warning(f"Cannot start tracking: mount in state {self.status.state}")
+                return False
+
+            logger.info(
+                f"Starting non-sidereal tracking: HA={ha_rate_steps_per_sec:.2f}, Dec={dec_rate_steps_per_sec:.2f} steps/sec")
+
+            # Stop any existing movement
+            await self.comm.stop()
+
+            # Set custom tracking velocities
+            await self.comm.set_velocity(int(abs(ha_rate_steps_per_sec)), int(abs(dec_rate_steps_per_sec)))
+
+            # Set targets based on rate directions - far beyond limits for continuous movement
+            if ha_rate_steps_per_sec >= 0:
+                ha_target = self._ha_pos_lim + 1000000  # Track westward (positive)
+            else:
+                ha_target = self._ha_neg_lim - 1000000  # Track eastward (negative)
+
+            if dec_rate_steps_per_sec >= 0:
+                dec_target = self._dec_pos_lim + 1000000  # Track northward
+            else:
+                dec_target = self._dec_neg_lim - 1000000  # Track southward
+
+            # Start tracking movement
+            if dec_rate_steps_per_sec == 0:
+                # HA-only tracking
+                await self.comm.move_ra_enc(ha_target)
+            else:
+                # Both axes tracking
+                await self.comm.move_enc(ha_target, dec_target)
+
+            # Start tracking monitor
+            if self._tracking_monitor_task and not self._tracking_monitor_task.done():
+                self._tracking_monitor_task.cancel()
+
+            self._tracking_monitor_task = asyncio.create_task(
+                self._velocity_tracking_monitor(ha_rate_steps_per_sec, dec_rate_steps_per_sec)
+            )
+
+            await self._update_status(tracking_mode=TrackingMode.NON_SIDEREAL)
+            await self._set_state(MountState.TRACKING)
+
+            logger.info("Non-sidereal tracking started")
+            return True
+
         except Exception as e:
             logger.error(f"Failed to start non-sidereal tracking: {e}")
             await self._set_state(MountState.ERROR)
             return False
+        finally:
+            self._command_lock.release()
 
     async def stop_tracking(self):
         """Public interface to stop tracking"""
@@ -652,4 +656,3 @@ class TelescopeMount:
     def get_target_position(self) -> Tuple[Optional[float], Optional[float]]:
         """Get target HA/Dec position in degrees"""
         return self.status.target_hour_angle, self.status.target_declination
-
