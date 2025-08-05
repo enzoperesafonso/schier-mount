@@ -93,7 +93,7 @@ class Coordinates:
         virtual_dec = self._encoder_dec_to_virtual(dec_enc)
 
         # Determine mode based on virtual_dec sign
-        below_pole = virtual_dec < -0.5
+        below_pole = virtual_dec < -1
 
         if below_pole:
             # Reverse below-pole transformations
