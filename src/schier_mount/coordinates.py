@@ -22,7 +22,6 @@ class Coordinates:
         self._ha_range = self._calibration_data['ranges']['ha_encoder_range']
         self._dec_range = self._calibration_data['ranges']['dec_encoder_range']
 
-        self._ha_steps_per_degree = calibration_data['ha_steps_per_degree']
         self._dec_steps_per_degree = calibration_data['dec_steps_per_degree']
 
         # Calculate the virtual angle for nadir (straight down) position
