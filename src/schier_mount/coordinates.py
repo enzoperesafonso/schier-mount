@@ -150,8 +150,7 @@ class Coordinates:
         """
         Convert virtual Hour Angle (-6h to +6h) to encoder steps.
 
-        Uses standard mapping like MountCoordinateTransformer:
-        -6h maps to negative encoder limit, +6h maps to positive encoder limit
+        Note: RA axis is inverted - positive encoder limit = -6h, negative limit = +6h
 
         Args:
             v_ha: Virtual hour angle in hours (-6 to +6)
@@ -163,9 +162,9 @@ class Coordinates:
         if not (-6.0 <= v_ha <= 6.0):
             raise ValueError(f"Virtual HA {v_ha:.3f}h out of range [-6h, +6h]")
 
-        # Standard mapping: -6h maps to 0, +6h maps to 1
-        # This matches MountCoordinateTransformer._mech_hours_to_encoder
-        fraction = (v_ha + 6.0) / 12.0
+        # Invert the mapping: -6h maps to positive limit, +6h maps to negative limit
+        # Normalize from [-6h, +6h] to [1.0, 0.0] (inverted)
+        fraction = (-v_ha + 6.0) / 12.0
 
         # Map to encoder range
         encoder_value = self._ha_neg_lim + fraction * self._ha_range
@@ -176,8 +175,7 @@ class Coordinates:
         """
         Convert encoder value to virtual HA (-6h to +6h).
 
-        Uses standard mapping like MountCoordinateTransformer:
-        negative encoder limit = -6h, positive encoder limit = +6h
+        Note: RA axis is inverted - positive encoder limit = -6h, negative limit = +6h
 
         Args:
             enc_ha: Encoder value
@@ -188,9 +186,8 @@ class Coordinates:
         # Calculate fraction across encoder range
         fraction = (enc_ha - self._ha_neg_lim) / self._ha_range
 
-        # Standard mapping: 0 maps to -6h, 1 maps to +6h
-        # This matches MountCoordinateTransformer._encoder_to_mech_hours
-        ha_hours = fraction * 12.0 - 6.0
+        # Map from [0.0, 1.0] to [+6h, -6h] (inverted mapping)
+        ha_hours = 6.0 - fraction * 12.0
 
         return ha_hours
 
