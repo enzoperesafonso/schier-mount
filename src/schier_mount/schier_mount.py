@@ -32,7 +32,7 @@ class TelescopeMount:
             raise ValueError("calibration_data is required for mount operation")
 
         # Validate required calibration data
-        required_keys = ['limits', 'ranges', 'ha_steps_per_degree', 'dec_steps_per_degree',
+        required_keys = ['limits', 'ranges', 'dec_steps_per_degree',
                          'observer_latitude', 'sidereal_rate_ha_steps_per_sec']
         for key in required_keys:
             if key not in calibration_data:
