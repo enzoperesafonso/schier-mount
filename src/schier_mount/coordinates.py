@@ -1,6 +1,5 @@
 from state import MountStatus
 
-
 # Fork-mounted equatorial telescope coordinate transformations
 # When |HA| <= 6h: Normal tracking using north (+) side of fork (RA increases east to west)
 # When |HA| > 6h: Below-pole tracking using south (-) side of fork (through the pole)
@@ -178,7 +177,7 @@ class Coordinates:
             enc_ha: Encoder value
 
         Returns:
-            ha_hours: Virtual hour angle in hours
+            ha_hours: Viratual hour angle in hours
         """
         # Calculate fraction across encoder range
         fraction = (enc_ha - self._ha_neg_lim) / self._ha_range
