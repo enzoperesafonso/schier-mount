@@ -172,25 +172,14 @@ class TelescopeMount:
         Get expected encoder positions when at home position.
 
         For ROTSE III mounts, home is typically at:
-        - HA: Center of travel range (pointing south)
-        - Dec: Horizontal position (pointing at horizon)
+        - HA: at the positive limit
+        - Dec: at negative limit
 
         Returns:
             Tuple[int, int]: Expected (ha_encoder, dec_encoder) at home
         """
-        # HA home position: center of travel range
-        ha_home = (self._ha_pos_lim + self._ha_neg_lim) // 2
 
-        # Dec home position: horizontal (declination = observer_latitude - 90)
-        # This points the telescope horizontally
-        observer_lat = self.coordinates._observer_latitude
-        home_declination = observer_lat - 90  # Horizontal pointing
-
-        # Convert to encoder position using coordinates class
-        # We'll use a dummy HA value since we only care about Dec
-        _, dec_home, _ = self.coordinates.ha_dec_to_encoder_positions(0, home_declination)
-
-        return ha_home, dec_home
+        return self._ha_pos_lim, self._dec_neg_lim
 
     def _verify_home_positions(self, actual_ha: int, actual_dec: int,
                                expected_ha: int, expected_dec: int) -> bool:
