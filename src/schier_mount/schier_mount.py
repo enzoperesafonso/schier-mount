@@ -73,33 +73,302 @@ class TelescopeMount:
         self._dec_pos_lim = limits['dec_positive']
         self._dec_neg_lim = limits['dec_negative']
 
+        # Homing initialisation calibration data
+        self._home_timeout = calibration_data.get('home_timeout_seconds', 120)
+        self._ha_tolerance = calibration_data.get('home_position_tolerance_ha', 500)
+        self._dec_tolerance = calibration_data.get('home_position_tolerance_dec', 500)
+
     # ================================
     #           MANAGEMENT
     # ================================
 
     async def initialize(self) -> bool:
-        """Initialize the mount and start monitoring tasks"""
+        """
+        Initialize the mount with enhanced verification sequence:
+        1. Home both axes
+        2. Verify encoder positions match expected home positions
+        3. Move to axis midpoints
+        4. Start monitoring tasks
+        """
         async with self._command_lock:
             try:
                 await self._set_state(MountState.INITIALIZING)
-                logger.info("Initializing telescope mount...")
+                logger.info("Starting enhanced telescope mount initialization...")
 
-                # Test communication
-                await self._update_encoder_positions()
-                logger.info(f"Initial position: HA_enc={self.status.ra_encoder}, Dec_enc={self.status.dec_encoder}")
+                # Step 1: Home the telescope and verify positions
+                if not await self._home_and_verify():
+                    logger.error("Homing and verification failed")
+                    await self._set_state(MountState.ERROR)
+                    return False
 
-                # Start monitoring tasks
+                # Step 2: Move to axis midpoints for safe starting position
+                if not await self._move_to_midpoints():
+                    logger.error("Failed to move to axis midpoints")
+                    await self._set_state(MountState.ERROR)
+                    return False
+
+                # Step 3: Start monitoring tasks
                 self._position_monitor_task = asyncio.create_task(self._position_monitor())
                 self._safety_monitor_task = asyncio.create_task(self._safety_monitor())
 
                 await self._set_state(MountState.IDLE)
-                logger.info("Mount initialization complete")
+                logger.info("Enhanced mount initialization completed successfully")
                 return True
 
             except Exception as e:
                 logger.error(f"Mount initialization failed: {e}")
                 await self._set_state(MountState.ERROR)
                 return False
+
+    async def _home_and_verify(self) -> bool:
+        """
+        Home both axes and verify encoder positions match expected home positions.
+
+        Returns:
+            bool: True if homing successful and positions verified
+        """
+        logger.info("Homing telescope and verifying encoder positions...")
+
+        try:
+            # Stop any current movement
+            await self.comm.stop()
+            await asyncio.sleep(1.0)
+
+            # Execute homing sequence
+            await self.comm.home()
+
+            # Wait for homing to complete with timeout
+            home_timeout = self._home_timeout
+            if not await self._wait_for_homing_complete(home_timeout):
+                logger.error("Homing operation timed out")
+                return False
+
+            # Get current encoder positions after homing
+            await self._update_encoder_positions()
+            current_ha_enc = self.status.ra_encoder
+            current_dec_enc = self.status.dec_encoder
+
+            if current_ha_enc is None or current_dec_enc is None:
+                logger.error("Failed to read encoder positions after homing")
+                return False
+
+            # Verify positions match expected home positions
+            expected_home_ha, expected_home_dec = self._get_expected_home_positions()
+
+            if not self._verify_home_positions(current_ha_enc, current_dec_enc,
+                                               expected_home_ha, expected_home_dec):
+                logger.error("Encoder positions do not match expected home positions")
+                return False
+
+            logger.info(f"Homing verified - HA: {current_ha_enc}, Dec: {current_dec_enc}")
+            return True
+
+        except Exception as e:
+            logger.error(f"Homing and verification failed: {e}")
+            return False
+
+    def _get_expected_home_positions(self) -> Tuple[int, int]:
+        """
+        Get expected encoder positions when at home position.
+
+        For ROTSE III mounts, home is typically at:
+        - HA: Center of travel range (pointing south)
+        - Dec: Horizontal position (pointing at horizon)
+
+        Returns:
+            Tuple[int, int]: Expected (ha_encoder, dec_encoder) at home
+        """
+        # HA home position: center of travel range
+        ha_home = (self._ha_pos_lim + self._ha_neg_lim) // 2
+
+        # Dec home position: horizontal (declination = observer_latitude - 90)
+        # This points the telescope horizontally
+        observer_lat = self.coordinates._observer_latitude
+        home_declination = observer_lat - 90  # Horizontal pointing
+
+        # Convert to encoder position using coordinates class
+        # We'll use a dummy HA value since we only care about Dec
+        _, dec_home, _ = self.coordinates.ha_dec_to_encoder_positions(0, home_declination)
+
+        return ha_home, dec_home
+
+    def _verify_home_positions(self, actual_ha: int, actual_dec: int,
+                               expected_ha: int, expected_dec: int) -> bool:
+        """
+        Verify that actual encoder positions are within tolerance of expected home positions.
+
+        Args:
+            actual_ha: Actual HA encoder position
+            actual_dec: Actual Dec encoder position
+            expected_ha: Expected HA encoder position at home
+            expected_dec: Expected Dec encoder position at home
+
+        Returns:
+            bool: True if positions are within acceptable tolerance
+        """
+        # Tolerance for home position verification (encoder steps)
+        ha_tolerance = self._ha_tolerance
+        dec_tolerance = self._dec_tolerance
+
+        ha_error = abs(actual_ha - expected_ha)
+        dec_error = abs(actual_dec - expected_dec)
+
+        ha_ok = ha_error <= ha_tolerance
+        dec_ok = dec_error <= dec_tolerance
+
+        logger.info(f"Home position verification:")
+        logger.info(
+            f"  HA: actual={actual_ha}, expected={expected_ha}, error={ha_error}, tolerance={ha_tolerance}, OK={ha_ok}")
+        logger.info(
+            f"  Dec: actual={actual_dec}, expected={expected_dec}, error={dec_error}, tolerance={dec_tolerance}, OK={dec_ok}")
+
+        if not ha_ok:
+            logger.error(f"HA encoder position error {ha_error} exceeds tolerance {ha_tolerance}")
+        if not dec_ok:
+            logger.error(f"Dec encoder position error {dec_error} exceeds tolerance {dec_tolerance}")
+
+        return ha_ok and dec_ok
+
+    async def _wait_for_homing_complete(self, timeout_seconds: float) -> bool:
+        """
+        Wait for homing operation to complete by monitoring mount status.
+
+        Args:
+            timeout_seconds: Maximum time to wait for homing
+
+        Returns:
+            bool: True if homing completed within timeout
+        """
+        start_time = time.time()
+        last_position = (None, None)
+        stable_count = 0
+        required_stable_readings = 5  # Require 5 stable readings to confirm stopped
+
+        logger.info(f"Waiting for homing to complete (timeout: {timeout_seconds}s)")
+
+        while time.time() - start_time < timeout_seconds:
+            try:
+                # Get current positions
+                ra_enc, dec_enc = await self.comm.get_encoder_positions()
+                current_position = (ra_enc, dec_enc)
+
+                # Check if position has stabilized
+                if current_position == last_position:
+                    stable_count += 1
+                    if stable_count >= required_stable_readings:
+                        logger.info("Homing completed - mount position stabilized")
+                        return True
+                else:
+                    stable_count = 0
+
+                last_position = current_position
+
+                # Log progress every 10 seconds
+                elapsed = time.time() - start_time
+                if int(elapsed) % 10 == 0 and elapsed > 0:
+                    logger.info(f"Homing in progress... {elapsed:.0f}s elapsed, position: HA={ra_enc}, Dec={dec_enc}")
+
+            except Exception as e:
+                logger.warning(f"Error checking homing status: {e}")
+
+            await asyncio.sleep(1.0)
+
+        logger.error("Homing operation timed out")
+        return False
+
+    async def _move_to_midpoints(self) -> bool:
+        """
+        Move telescope to axis midpoints as safe starting position.
+
+        Returns:
+            bool: True if successfully moved to midpoints
+        """
+        logger.info("Moving to axis midpoints for safe starting position...")
+
+        try:
+            # Calculate midpoint positions
+            ha_midpoint = (self._ha_pos_lim + self._ha_neg_lim) // 2
+            dec_midpoint = (self._dec_pos_lim + self._dec_neg_lim) // 2
+
+            # Convert to HA/Dec coordinates for logging
+            ha_hours, dec_degrees, below_pole = self.coordinates.encoder_positions_to_ha_dec(
+                ha_midpoint, dec_midpoint)
+
+            logger.info(f"Moving to midpoints: HA={ha_hours:.2f}h, Dec={dec_degrees:.1f}°")
+            logger.info(f"Encoder positions: HA_enc={ha_midpoint}, Dec_enc={dec_midpoint}")
+
+            # Set reasonable slew speeds for initialization move
+            init_speed_ha = 30000
+            init_speed_dec = 30000
+            await self.comm.set_velocity(init_speed_ha, init_speed_dec)
+
+            # Execute move to midpoints
+            await self.comm.move_enc(ha_midpoint, dec_midpoint)
+
+            # Wait for move to complete
+            move_timeout = 180
+            if not await self._wait_for_position_reached(ha_midpoint, dec_midpoint, move_timeout):
+                logger.error("Failed to reach axis midpoints within timeout")
+                return False
+
+            # Update status with final position
+            await self._update_encoder_positions()
+
+            logger.info("Successfully moved to axis midpoints")
+            logger.info(
+                f"Final position: HA={self.status.current_hour_angle:.2f}h, Dec={self.status.current_declination:.1f}°")
+
+            return True
+
+        except Exception as e:
+            logger.error(f"Failed to move to axis midpoints: {e}")
+            return False
+
+    async def _wait_for_position_reached(self, target_ha: int, target_dec: int,
+                                         timeout_seconds: float) -> bool:
+        """
+        Wait for telescope to reach target encoder positions.
+
+        Args:
+            target_ha: Target HA encoder position
+            target_dec: Target Dec encoder position
+            timeout_seconds: Maximum time to wait
+
+        Returns:
+            bool: True if target position reached within timeout
+        """
+        start_time = time.time()
+        tolerance = self._slew_tolerance_steps
+
+        while time.time() - start_time < timeout_seconds:
+            try:
+                # Update current position
+                await self._update_encoder_positions()
+
+                if self.status.ra_encoder is None or self.status.dec_encoder is None:
+                    await asyncio.sleep(0.5)
+                    continue
+
+                # Check if we've reached the target
+                ha_error = abs(self.status.ra_encoder - target_ha)
+                dec_error = abs(self.status.dec_encoder - target_dec)
+
+                if ha_error <= tolerance and dec_error <= tolerance:
+                    logger.info(f"Target position reached - HA error: {ha_error}, Dec error: {dec_error}")
+                    return True
+
+                # Log progress every 10 seconds
+                elapsed = time.time() - start_time
+                if int(elapsed) % 10 == 0 and elapsed > 0:
+                    logger.info(f"Moving to target... {elapsed:.0f}s elapsed, errors: HA={ha_error}, Dec={dec_error}")
+
+            except Exception as e:
+                logger.warning(f"Error checking position: {e}")
+
+            await asyncio.sleep(0.5)
+
+        logger.error("Target position not reached within timeout")
+        return False
 
     async def shutdown(self):
         """Shutdown the mount and cleanup tasks"""
