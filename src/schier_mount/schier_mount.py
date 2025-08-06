@@ -75,8 +75,8 @@ class TelescopeMount:
 
         # Homing initialisation calibration data
         self._home_timeout = calibration_data.get('home_timeout_seconds', 120)
-        self._ha_tolerance = calibration_data.get('home_position_tolerance_ha', 20000)
-        self._dec_tolerance = calibration_data.get('home_position_tolerance_dec', 20000)
+        self._ha_tolerance = calibration_data.get('home_position_tolerance_ha', 200000)
+        self._dec_tolerance = calibration_data.get('home_position_tolerance_dec', 200000)
 
     # ================================
     #           MANAGEMENT
