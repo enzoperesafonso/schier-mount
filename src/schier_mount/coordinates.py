@@ -10,7 +10,7 @@ class Coordinates:
     def __init__(self, status: MountStatus, calibration_data):
         self._calibration_data = calibration_data
         self._status = status
-        self._observer_latitude = calibration_data['observer_latitude'] + 4
+        self._observer_latitude = calibration_data['observer_latitude'] - 4
 
         # Mount limits and ranges
         self._limits = calibration_data['limits']
