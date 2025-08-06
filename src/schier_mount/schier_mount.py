@@ -243,7 +243,7 @@ class TelescopeMount:
         start_time = time.time()
         last_position = (None, None)
         stable_count = 0
-        required_stable_readings = 20
+        required_stable_readings = 10
 
         # Position stability tolerance to handle oscillation (default 100 steps)
         position_tolerance = 100
