@@ -304,8 +304,8 @@ class TelescopeMount:
 
             # Set reasonable slew speeds for initialization move
             initialization_params = self._calibration_data.get('initialization', {})
-            init_speed_ha = initialization_params.get('init_slew_speed_ha', 20000)
-            init_speed_dec = initialization_params.get('init_slew_speed_dec', 20000)
+            init_speed_ha = initialization_params.get('init_slew_speed_ha', 30000)
+            init_speed_dec = initialization_params.get('init_slew_speed_dec', 30000)
             await self.comm.set_velocity(init_speed_ha, init_speed_dec)
 
             # Execute move to midpoints
