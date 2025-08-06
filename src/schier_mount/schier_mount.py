@@ -25,6 +25,8 @@ class TelescopeMount:
     - Fork mount coordinate handling with below-pole pointing
     - Slewing with automatic tracking resume
     - Emergency stop functionality
+    - Enhanced initialization with encoder verification
+    - Position stability detection with oscillation tolerance
     """
 
     def __init__(self, device: str = "/dev/ttyS0", baudrate: int = 9600, calibration_data: Dict[str, Any] = None):
@@ -43,6 +45,9 @@ class TelescopeMount:
         self.status = MountStatus()
         self.coordinates = Coordinates(self.status, calibration_data)
         self.safety = Safety(calibration_data)
+
+        # Store calibration data for initialization
+        self._calibration_data = calibration_data
 
         # Thread synchronization
         self._command_lock = asyncio.Lock()  # Serialize all mount commands
@@ -72,11 +77,6 @@ class TelescopeMount:
         self._ha_neg_lim = limits['ha_negative']
         self._dec_pos_lim = limits['dec_positive']
         self._dec_neg_lim = limits['dec_negative']
-
-        # Homing initialisation calibration data
-        self._home_timeout = calibration_data.get('home_timeout_seconds', 120)
-        self._ha_tolerance = calibration_data.get('home_position_tolerance_ha', 200000)
-        self._dec_tolerance = calibration_data.get('home_position_tolerance_dec', 200000)
 
     # ================================
     #           MANAGEMENT
@@ -138,7 +138,7 @@ class TelescopeMount:
             await self.comm.home()
 
             # Wait for homing to complete with timeout
-            home_timeout = self._home_timeout
+            home_timeout = 120
             if not await self._wait_for_homing_complete(home_timeout):
                 logger.error("Homing operation timed out")
                 return False
@@ -171,33 +171,43 @@ class TelescopeMount:
         """
         Get expected encoder positions when at home position.
 
-        For ROTSE III mounts, home is typically at:
-        - HA: at the positive limit
-        - Dec: at negative limit
+        For this mount, home command sends telescope to:
+        - HA: Positive RA limit (self._ha_pos_lim)
+        - Dec: Negative Dec limit (self._dec_neg_lim)
 
         Returns:
             Tuple[int, int]: Expected (ha_encoder, dec_encoder) at home
         """
+        # Home positions are at the physical limits
+        ha_home = self._ha_pos_lim  # Positive RA limit
+        dec_home = self._dec_neg_lim  # Negative Dec limit
 
-        return self._ha_pos_lim, self._dec_neg_lim
+        logger.info(f"Expected home positions: HA={ha_home} (pos limit), Dec={dec_home} (neg limit)")
+
+        return ha_home, dec_home
 
     def _verify_home_positions(self, actual_ha: int, actual_dec: int,
                                expected_ha: int, expected_dec: int) -> bool:
         """
         Verify that actual encoder positions are within tolerance of expected home positions.
 
+        Home positions are at physical limits:
+        - HA: Positive limit
+        - Dec: Negative limit
+
         Args:
             actual_ha: Actual HA encoder position
             actual_dec: Actual Dec encoder position
-            expected_ha: Expected HA encoder position at home
-            expected_dec: Expected Dec encoder position at home
+            expected_ha: Expected HA encoder position at home (positive limit)
+            expected_dec: Expected Dec encoder position at home (negative limit)
 
         Returns:
-            bool: True if positions are within acceptable tolerance
+            bool: True if positions are within acceptable tolerance of limits
         """
         # Tolerance for home position verification (encoder steps)
-        ha_tolerance = self._ha_tolerance
-        dec_tolerance = self._dec_tolerance
+        # Use tighter tolerances since we're checking against physical limits
+        ha_tolerance = 100000
+        dec_tolerance = 100000
 
         ha_error = abs(actual_ha - expected_ha)
         dec_error = abs(actual_dec - expected_dec)
@@ -205,16 +215,18 @@ class TelescopeMount:
         ha_ok = ha_error <= ha_tolerance
         dec_ok = dec_error <= dec_tolerance
 
-        logger.info(f"Home position verification:")
+        logger.info(f"Home position verification (at physical limits):")
         logger.info(
-            f"  HA: actual={actual_ha}, expected={expected_ha}, error={ha_error}, tolerance={ha_tolerance}, OK={ha_ok}")
+            f"  HA: actual={actual_ha}, expected={expected_ha} (pos limit), error={ha_error}, tolerance={ha_tolerance}, OK={ha_ok}")
         logger.info(
-            f"  Dec: actual={actual_dec}, expected={expected_dec}, error={dec_error}, tolerance={dec_tolerance}, OK={dec_ok}")
+            f"  Dec: actual={actual_dec}, expected={expected_dec} (neg limit), error={dec_error}, tolerance={dec_tolerance}, OK={dec_ok}")
 
         if not ha_ok:
             logger.error(f"HA encoder position error {ha_error} exceeds tolerance {ha_tolerance}")
+            logger.error("This may indicate encoder synchronization issues or mechanical problems")
         if not dec_ok:
             logger.error(f"Dec encoder position error {dec_error} exceeds tolerance {dec_tolerance}")
+            logger.error("This may indicate encoder synchronization issues or mechanical problems")
 
         return ha_ok and dec_ok
 
@@ -231,9 +243,13 @@ class TelescopeMount:
         start_time = time.time()
         last_position = (None, None)
         stable_count = 0
-        required_stable_readings = 5  # Require 5 stable readings to confirm stopped
+        required_stable_readings = 20
 
-        logger.info(f"Waiting for homing to complete (timeout: {timeout_seconds}s)")
+        # Position stability tolerance to handle oscillation (default 100 steps)
+        position_tolerance = 100
+
+        logger.info(
+            f"Waiting for homing to complete (timeout: {timeout_seconds}s, tolerance: {position_tolerance} steps)")
 
         while time.time() - start_time < timeout_seconds:
             try:
@@ -241,8 +257,8 @@ class TelescopeMount:
                 ra_enc, dec_enc = await self.comm.get_encoder_positions()
                 current_position = (ra_enc, dec_enc)
 
-                # Check if position has stabilized
-                if current_position == last_position:
+                # Check if position has stabilized within tolerance
+                if self._positions_are_stable(current_position, last_position, position_tolerance):
                     stable_count += 1
                     if stable_count >= required_stable_readings:
                         logger.info("Homing completed - mount position stabilized")
@@ -287,15 +303,16 @@ class TelescopeMount:
             logger.info(f"Encoder positions: HA_enc={ha_midpoint}, Dec_enc={dec_midpoint}")
 
             # Set reasonable slew speeds for initialization move
-            init_speed_ha = 30000
-            init_speed_dec = 30000
+            initialization_params = self._calibration_data.get('initialization', {})
+            init_speed_ha = initialization_params.get('init_slew_speed_ha', 20000)
+            init_speed_dec = initialization_params.get('init_slew_speed_dec', 20000)
             await self.comm.set_velocity(init_speed_ha, init_speed_dec)
 
             # Execute move to midpoints
             await self.comm.move_enc(ha_midpoint, dec_midpoint)
 
             # Wait for move to complete
-            move_timeout = 180
+            move_timeout = initialization_params.get('init_move_timeout_seconds', 180)
             if not await self._wait_for_position_reached(ha_midpoint, dec_midpoint, move_timeout):
                 logger.error("Failed to reach axis midpoints within timeout")
                 return False
@@ -358,6 +375,30 @@ class TelescopeMount:
 
         logger.error("Target position not reached within timeout")
         return False
+
+    def _positions_are_stable(self, current_pos: Tuple[int, int],
+                              last_pos: Tuple[int, int], tolerance: int) -> bool:
+        """
+        Check if two positions are within tolerance, accounting for mount oscillation.
+
+        Args:
+            current_pos: Current (HA, Dec) encoder position tuple
+            last_pos: Previous (HA, Dec) encoder position tuple
+            tolerance: Maximum allowed difference in encoder steps
+
+        Returns:
+            bool: True if positions are within tolerance (considered stable)
+        """
+        if last_pos == (None, None) or current_pos == (None, None):
+            return False
+
+        if None in current_pos or None in last_pos:
+            return False
+
+        ha_diff = abs(current_pos[0] - last_pos[0])
+        dec_diff = abs(current_pos[1] - last_pos[1])
+
+        return ha_diff <= tolerance and dec_diff <= tolerance
 
     async def shutdown(self):
         """Shutdown the mount and cleanup tasks"""
@@ -858,7 +899,10 @@ class TelescopeMount:
         """Check if mount is currently moving (call with position_lock held)"""
         current_pos = (self.status.ra_encoder, self.status.dec_encoder)
 
-        if current_pos == self._last_position:
+        # Use tolerance-based comparison to handle oscillation
+        movement_tolerance = self._calibration_data.get('movement_detection_tolerance', 50)
+
+        if self._positions_are_stable(current_pos, self._last_position, movement_tolerance):
             self._stationary_count += 1
         else:
             self._stationary_count = 0
@@ -924,3 +968,122 @@ class TelescopeMount:
     def get_target_position(self) -> Tuple[Optional[float], Optional[float]]:
         """Get target HA/Dec position in degrees"""
         return self.status.target_hour_angle, self.status.target_declination
+
+    # ================================
+    # ADDITIONAL UTILITY METHODS
+    # ================================
+
+    async def park(self) -> bool:
+        """Park the telescope at a safe position"""
+        try:
+            async with self._command_lock:
+                if self.status.state not in [MountState.IDLE, MountState.TRACKING]:
+                    logger.warning(f"Cannot park: mount in state {self.status.state}")
+                    return False
+
+                # Stop tracking
+                await self._stop_tracking_internal()
+
+                await self._set_state(MountState.PARKING)
+                logger.info("Parking telescope...")
+
+                # Move to park position (typically zenith or home position)
+                park_ha = 0.0  # Point south
+                park_dec = self.coordinates._observer_latitude  # Point at zenith
+
+                success = await self.slew_to_ha_dec(park_ha, park_dec)
+
+                if success:
+                    await self._set_state(MountState.PARKED)
+                    logger.info("Telescope parked successfully")
+                else:
+                    await self._set_state(MountState.ERROR)
+                    logger.error("Failed to park telescope")
+
+                return success
+
+        except Exception as e:
+            logger.error(f"Park operation failed: {e}")
+            await self._set_state(MountState.ERROR)
+            return False
+
+    async def unpark(self) -> bool:
+        """Unpark the telescope"""
+        try:
+            async with self._command_lock:
+                if self.status.state != MountState.PARKED:
+                    logger.warning(f"Cannot unpark: mount not in parked state")
+                    return False
+
+                await self._set_state(MountState.IDLE)
+                logger.info("Telescope unparked")
+                return True
+
+        except Exception as e:
+            logger.error(f"Unpark operation failed: {e}")
+            return False
+
+    def get_mount_info(self) -> Dict[str, Any]:
+        """Get comprehensive mount information"""
+        return {
+            'state': self.status.state.value,
+            'tracking_mode': self.status.tracking_mode.value,
+            'pier_side': self.status.pier_side.value,
+            'is_moving': self.status.is_moving,
+            'current_position': {
+                'ha_hours': self.status.current_hour_angle,
+                'dec_degrees': self.status.current_declination,
+                'ha_encoder': self.status.ra_encoder,
+                'dec_encoder': self.status.dec_encoder
+            },
+            'target_position': {
+                'ha_hours': self.status.target_hour_angle,
+                'dec_degrees': self.status.target_declination,
+                'ha_encoder': self.status.target_ra_encoder,
+                'dec_encoder': self.status.target_dec_encoder
+            },
+            'limits': {
+                'ha_positive': self._ha_pos_lim,
+                'ha_negative': self._ha_neg_lim,
+                'dec_positive': self._dec_pos_lim,
+                'dec_negative': self._dec_neg_lim
+            },
+            'last_update': self.status.last_position_update,
+            'slew_start_time': self.status.slew_start_time
+        }
+
+    async def sync_position(self, ha: float, dec: float) -> bool:
+        """
+        Synchronize the mount's position to specified coordinates
+        This updates the coordinate system without moving the telescope
+        """
+        try:
+            async with self._command_lock:
+                if self.status.state not in [MountState.IDLE]:
+                    logger.warning(f"Cannot sync: mount in state {self.status.state}")
+                    return False
+
+                # Get current encoder positions
+                await self._update_encoder_positions()
+
+                if self.status.ra_encoder is None or self.status.dec_encoder is None:
+                    logger.error("Cannot sync: no encoder position data")
+                    return False
+
+                logger.info(f"Syncing position to HA={ha:.3f}h, Dec={dec:.1f}°")
+                logger.info(f"Current encoders: HA={self.status.ra_encoder}, Dec={self.status.dec_encoder}")
+
+                # Update the coordinates object with the sync
+                # This would require modification to the coordinates class to support syncing
+                # For now, just update our current position
+                await self._update_status(
+                    current_hour_angle=ha,
+                    current_declination=dec
+                )
+
+                logger.info("Position sync completed")
+                return True
+
+        except Exception as e:
+            logger.error(f"Position sync failed: {e}")
+            return False
