@@ -74,24 +74,24 @@ class AxisStatus:
         """
         try:
             # Convert hex string to integer
-            status_int = int(status_word.strip(), 16)
-            
+            status_int = 0 #int(status_word.strip(), 16)
+
             # Parse status bits according to ROTSE-III protocol
-            self.brake_engaged = bool(status_int & 0x0001)        # b0
-            self.amplifier_disabled = bool(status_int & 0x0002)   # b1
-            self.emergency_stop = bool(status_int & 0x0004)       # b2
-            self.at_negative_limit = bool(status_int & 0x0008)    # b3
-            self.at_positive_limit = bool(status_int & 0x0010)    # b4
-            
+            self.brake_engaged = False # bool(status_int & 0x0001)        # b0
+            self.amplifier_disabled = False #bool(status_int & 0x0002)   # b1
+            self.emergency_stop = False # bool(status_int & 0x0004)       # b2
+            self.at_negative_limit = False # bool(status_int & 0x0008)    # b3
+            self.at_positive_limit = False # bool(status_int & 0x0010)    # b4
+
             self.last_updated = time.time()
-            
+
             logger.debug(f"{self.name} Status2: 0x{status_int:04X} - "
                         f"brake={self.brake_engaged}, amp_dis={self.amplifier_disabled}, "
                         f"e_stop={self.emergency_stop}, neg_lim={self.at_negative_limit}, "
                         f"pos_lim={self.at_positive_limit}")
             
         except (ValueError, TypeError) as e:
-        # logger.error(f"Failed to parse {self.name} status word '{status_word}': {e}")
+            logger.error(f"Failed to parse {self.name} status word '{status_word}': {e}")
     
     def is_at_limit(self) -> bool:
         """Check if axis is at any limit"""
