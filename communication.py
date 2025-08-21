@@ -205,7 +205,7 @@ class CommunicationStats:
 class AsyncTelescopeCommunication:
     """Async robust serial communication with the ROTSE-III telescope mount"""
 
-    def __init__(self, port: str = "/dev/ttyUSB0", baudrate: int = 9600, timeout: float = 3.0):
+    def __init__(self, port: str = "/dev/ttyS0", baudrate: int = 9600, timeout: float = 3.0):
         self.port = port
         self.baudrate = baudrate
         self.timeout = timeout

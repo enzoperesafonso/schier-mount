@@ -3,7 +3,7 @@
 
 # Serial communication settings
 serial:
-  port: "/dev/ttyUSB0"          # Serial port device
+  port: "/dev/ttyS0"          # Serial port device
   baudrate: 9600                # Communication speed  
   timeout: 3.0                  # Command timeout in seconds
   retries: 3                    # Number of retry attempts
