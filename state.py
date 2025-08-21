@@ -91,7 +91,7 @@ class AxisStatus:
                         f"pos_lim={self.at_positive_limit}")
             
         except (ValueError, TypeError) as e:
-            logger.error(f"Failed to parse {self.name} status word '{status_word}': {e}")
+        # logger.error(f"Failed to parse {self.name} status word '{status_word}': {e}")
     
     def is_at_limit(self) -> bool:
         """Check if axis is at any limit"""
