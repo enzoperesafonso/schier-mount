@@ -1,8 +1,12 @@
-from state import MountStatus
+"""
+Coordinate transformations for fork-mounted equatorial ROTSE-III telescope.
+Handles normal and below-pole pointing modes.
+"""
 
-# Fork-mounted equatorial telescope coordinate transformations
-# When |HA| <= 6h: Normal tracking using north (+) side of fork (RA increases east to west)
-# When |HA| > 6h: Below-pole tracking using south (-) side of fork (through the pole)
+from state import MountStatus, PierSide
+import logging
+
+logger = logging.getLogger(__name__)
 
 class Coordinates:
     """Handle telescope pointing and coordinate conversion for the fork-mounted equatorial Schier mount"""
@@ -10,23 +14,42 @@ class Coordinates:
     def __init__(self, status: MountStatus, calibration_data):
         self._calibration_data = calibration_data
         self._status = status
-        self._observer_latitude = calibration_data['observer_latitude'] - 4
+        self._observer_latitude = calibration_data['observer_latitude']
 
         # Mount limits and ranges
         self._limits = calibration_data['limits']
-        self._ha_neg_lim = self._limits['ha_negative']
-        self._dec_neg_lim = self._limits['dec_negative']
-        self._ha_pos_lim = self._limits['ha_positive']
-        self._dec_pos_lim = self._limits['dec_positive']
-
         self._ha_range = self._calibration_data['ranges']['ha_encoder_range']
         self._dec_range = self._calibration_data['ranges']['dec_encoder_range']
+
+        # Get home position limits (these should always be present)
+        self._ha_pos_lim = self._limits['ha_positive']  # Home position
+        self._dec_neg_lim = self._limits['dec_negative']  # Home position
+
+        # Calculate missing limits dynamically from home + ranges
+        # Never rely on config for calculated limits - always compute from actual positions
+        if 'ha_negative' in self._limits:
+            self._ha_neg_lim = self._limits['ha_negative']
+            logger.info(f"Using configured HA negative limit: {self._ha_neg_lim}")
+        else:
+            self._ha_neg_lim = self._ha_pos_lim - self._ha_range
+            logger.info(f"Calculated HA negative limit: {self._ha_neg_lim} (from home {self._ha_pos_lim} - range {self._ha_range})")
+
+        if 'dec_positive' in self._limits:
+            self._dec_pos_lim = self._limits['dec_positive']
+            logger.info(f"Using configured Dec positive limit: {self._dec_pos_lim}")
+        else:
+            self._dec_pos_lim = self._dec_neg_lim + self._dec_range
+            logger.info(f"Calculated Dec positive limit: {self._dec_pos_lim} (from home {self._dec_neg_lim} + range {self._dec_range})")
 
         self._dec_steps_per_degree = calibration_data['dec_steps_per_degree']
 
         # Calculate the virtual angle for nadir (straight down) position
         # This is the declination angle when pointing at nadir from observer's position
         self._nadir_virtual_angle = -(90 + abs(self._observer_latitude))
+        
+        logger.info(f"Coordinates initialized for latitude {self._observer_latitude}°")
+        logger.info(f"HA limits: {self._ha_neg_lim} to {self._ha_pos_lim} (range: {self._ha_range})")
+        logger.info(f"Dec limits: {self._dec_neg_lim} to {self._dec_pos_lim} (range: {self._dec_range})")
 
     def ha_dec_to_encoder_positions(self, ha: float, dec: float) -> tuple[int, int, bool]:
         """
@@ -65,7 +88,7 @@ class Coordinates:
             virtual_dec = dec + 90  # Offset declination to make it positive
             virtual_ha = ha
 
-        print(
+        logger.debug(
             f'HA={ha:.3f}h, Dec={dec:.1f}° -> virtual_ha={virtual_ha:.3f}h, virtual_dec={virtual_dec:.1f}°, below_pole={below_pole}')
 
         # Convert virtual coordinates to encoder positions
@@ -290,3 +313,77 @@ class Coordinates:
 
         except (ValueError, ZeroDivisionError):
             return False
+    
+    def get_pier_side_from_ha(self, ha: float) -> PierSide:
+        """Determine pier side based on hour angle"""
+        if abs(ha) <= 6.0:
+            return PierSide.NORMAL
+        else:
+            return PierSide.BELOW_THE_POLE
+
+    def update_limits_from_initialization(self, home_ha_encoder: int, home_dec_encoder: int) -> None:
+        """
+        Update encoder limits from actual initialization positions.
+        Called after homing to get precise limit positions.
+        
+        Args:
+            home_ha_encoder: Actual HA encoder position at positive limit after homing
+            home_dec_encoder: Actual Dec encoder position at negative limit after homing
+        """
+        logger.info(f"Updating limits from initialization: HA={home_ha_encoder}, Dec={home_dec_encoder}")
+        
+        # Update home positions
+        old_ha_pos = self._ha_pos_lim
+        old_dec_neg = self._dec_neg_lim
+        
+        self._ha_pos_lim = home_ha_encoder
+        self._dec_neg_lim = home_dec_encoder
+        
+        # Recalculate derived limits
+        self._ha_neg_lim = self._ha_pos_lim - self._ha_range
+        self._dec_pos_lim = self._dec_neg_lim + self._dec_range
+        
+        # Update calibration data
+        self._limits['ha_positive'] = home_ha_encoder
+        self._limits['dec_negative'] = home_dec_encoder
+        self._limits['ha_negative'] = self._ha_neg_lim
+        self._limits['dec_positive'] = self._dec_pos_lim
+        
+        logger.info(f"Limits updated from initialization:")
+        logger.info(f"  HA: {old_ha_pos} -> {self._ha_pos_lim} (positive limit)")
+        logger.info(f"  Dec: {old_dec_neg} -> {self._dec_neg_lim} (negative limit)")
+        logger.info(f"  Calculated HA negative: {self._ha_neg_lim}")
+        logger.info(f"  Calculated Dec positive: {self._dec_pos_lim}")
+
+    def get_safe_limits(self, safety_margin_steps: int) -> dict:
+        """
+        Get encoder limits with safety margin applied.
+        
+        Args:
+            safety_margin_steps: Safety margin in encoder steps
+            
+        Returns:
+            Dictionary with safe limits for each axis
+        """
+        return {
+            'ha_positive': self._ha_pos_lim - safety_margin_steps,
+            'ha_negative': self._ha_neg_lim + safety_margin_steps,
+            'dec_positive': self._dec_pos_lim - safety_margin_steps,
+            'dec_negative': self._dec_neg_lim + safety_margin_steps
+        }
+
+    def get_tracking_limit_distance(self, current_ha_encoder: int, tracking_direction: str) -> int:
+        """
+        Calculate distance to tracking limit.
+        
+        Args:
+            current_ha_encoder: Current HA encoder position
+            tracking_direction: 'positive' or 'negative'
+            
+        Returns:
+            Distance to limit in encoder steps (positive value)
+        """
+        if tracking_direction == 'positive':
+            return self._ha_pos_lim - current_ha_encoder
+        else:
+            return current_ha_encoder - self._ha_neg_lim
