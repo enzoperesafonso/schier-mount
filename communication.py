@@ -449,7 +449,7 @@ class AsyncTelescopeCommunication:
 class TelescopeCommunication:
     """Synchronous wrapper for backward compatibility"""
     
-    def __init__(self, port: str = "/dev/ttyUSB0", baudrate: int = 9600, timeout: float = 3.0):
+    def __init__(self, port: str = "/dev/ttyS0", baudrate: int = 9600, timeout: float = 3.0):
         self._async_comm = AsyncTelescopeCommunication(port, baudrate, timeout)
         self._loop = None
         
