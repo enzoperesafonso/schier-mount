@@ -65,6 +65,7 @@ class TelescopeCLI:
             'limits': self.cmd_limits,
             'stats': self.cmd_communication_stats,
             'test': self.cmd_test_sequence,
+            'parkinfo': self.cmd_park_info,
             'emergency': self.cmd_emergency_stop,
             'estop': self.cmd_emergency_stop,
             'config': self.cmd_show_config,
@@ -167,8 +168,9 @@ class TelescopeCLI:
             "Tracking": {
                 "track": "Start sidereal tracking",
                 "untrack": "Stop tracking",
-                "park [ha] [dec]": "Park telescope at position",
-                "unpark": "Unpark telescope"
+                "park [ha] [dec]": "Park telescope at position (default: 0h -20°)",
+                "unpark": "Unpark telescope",
+                "parkinfo": "Show park position information"
             },
             "Testing": {
                 "test": "Run comprehensive test sequence",
@@ -195,8 +197,10 @@ class TelescopeCLI:
         print(f"  telescope> init")
         print(f"  telescope> slew 2.5 -30.0 fast")
         print(f"  telescope> track")
+        print(f"  telescope> park 1.0 -15.0")
+        print(f"  telescope> parkinfo")
+        print(f"  telescope> unpark")
         print(f"  telescope> monitor 30")
-        print(f"  telescope> stop")
         print()
     
     async def cmd_connect(self, args):
@@ -416,14 +420,105 @@ class TelescopeCLI:
             print("❌ Failed to stop tracking")
     
     async def cmd_park(self, args):
-        """Park telescope"""
-        print("🅿️  Park functionality not implemented in async driver yet")
-        print("💡 Use 'slew 0 -20' to move to a park-like position")
+        """Park telescope at specified coordinates"""
+        if not await self._check_connection():
+            return
+        
+        if not self.telescope.is_initialized():
+            print("❌ Telescope not initialized. Run 'init' first.")
+            return
+        
+        # Parse optional coordinates
+        ha = 0.0  # Default: on meridian
+        dec = -20.0  # Default: pointing south
+        
+        if len(args) >= 1:
+            try:
+                ha = float(args[0])
+            except ValueError:
+                print("❌ Invalid hour angle. Using default 0.0h")
+        
+        if len(args) >= 2:
+            try:
+                dec = float(args[1])
+            except ValueError:
+                print("❌ Invalid declination. Using default -20.0°")
+        
+        print(f"🅿️  Parking telescope at HA={ha:.3f}h, Dec={dec:.1f}°...")
+        success = await self.telescope.park(ha, dec)
+        
+        if success:
+            print("✅ Parking sequence started!")
+            print("💡 Use 'monitor' to watch progress or 'status' to check state")
+            print("🔍 Telescope will be in PARKING state until movement completes")
+        else:
+            print("❌ Failed to start parking")
     
     async def cmd_unpark(self, args):
         """Unpark telescope"""
-        print("🅿️  Unpark functionality not implemented in async driver yet")
-        print("💡 Telescope state will change to IDLE automatically")
+        if not await self._check_connection():
+            return
+        
+        if not self.telescope.is_parked():
+            current_state = self.telescope.status.state.value
+            print(f"❌ Cannot unpark: telescope is in '{current_state}' state, not 'parked'")
+            return
+        
+        print("🅿️  Unparking telescope...")
+        success = await self.telescope.unpark()
+        
+        if success:
+            print("✅ Telescope unparked - ready for operations!")
+        else:
+            print("❌ Failed to unpark telescope")
+    
+    async def cmd_park_info(self, args):
+        """Show park position information"""
+        if not await self._check_connection():
+            return
+        
+        print("\n🅿️  Park Information:")
+        print("=" * 30)
+        
+        # Current state
+        current_state = self.telescope.status.state
+        is_parked = self.telescope.is_parked()
+        
+        print(f"Current State:    {current_state.value.upper()}")
+        print(f"Is Parked:        {'✅ Yes' if is_parked else '❌ No'}")
+        
+        # Park position
+        park_pos = self.telescope.get_park_position()
+        if park_pos:
+            ha, dec = park_pos
+            print(f"Park Position:    HA={ha:.3f}h, Dec={dec:.1f}°")
+            print(f"Park Position:    RA={ha*15:.3f}°, Dec={dec:.1f}°")
+        else:
+            print("Park Position:    Not set")
+        
+        # Current position for comparison
+        current_ha, current_dec = self.telescope.get_position()
+        if current_ha is not None and current_dec is not None:
+            print(f"Current Position: HA={current_ha:.3f}h, Dec={current_dec:.1f}°")
+            
+            # Distance to park position
+            if park_pos:
+                park_ha, park_dec = park_pos
+                ha_diff = abs(current_ha - park_ha)
+                dec_diff = abs(current_dec - park_dec)
+                print(f"Distance to Park: ΔHA={ha_diff:.3f}h, ΔDec={dec_diff:.1f}°")
+        else:
+            print("Current Position: Unknown")
+        
+        # Show default park position
+        print(f"\nDefault Park:     HA=0.000h, Dec=-20.0° (meridian, south)")
+        
+        # Usage instructions
+        print(f"\n💡 Usage:")
+        print(f"  park              - Park at default position (0h, -20°)")
+        print(f"  park 1.5 -30      - Park at HA=1.5h, Dec=-30°")
+        print(f"  unpark            - Unpark telescope (PARKED → IDLE)")
+        print(f"  monitor           - Watch parking progress")
     
     async def cmd_home(self, args):
         """Go to home position"""

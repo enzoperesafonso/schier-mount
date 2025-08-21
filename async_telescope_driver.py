@@ -98,6 +98,8 @@ class AsyncTelescopeDriver:
         self._commanded_dec_target: Optional[int] = None
         self._slew_start_time: Optional[float] = None
         self._tracking_direction: Optional[str] = None
+        self._parking_mode = False
+        self._park_position: Optional[Tuple[float, float]] = None
         
         logger.info(f"AsyncTelescopeDriver initialized for {self.config.get('serial.port')}")
     
@@ -436,6 +438,7 @@ class AsyncTelescopeDriver:
                 self._commanded_ha_target = None
                 self._commanded_dec_target = None
                 self._tracking_direction = None
+                self._parking_mode = False
                 
                 await asyncio.sleep(0.5)
                 self.status.set_state(MountState.IDLE)
@@ -523,6 +526,151 @@ class AsyncTelescopeDriver:
         except Exception as e:
             logger.error(f"Failed to start tracking: {e}")
             return False
+    
+    async def stop_tracking(self) -> bool:
+        """Stop sidereal tracking (async)"""
+        logger.info("Stopping tracking")
+        
+        try:
+            async with self._command_lock:
+                # Stop RA axis (tracking axis)
+                await self.comm.send_command("$StopRA", "@StopRA")
+                
+                # Clear tracking state
+                self.status.tracking_mode = TrackingMode.STOPPED
+                self._tracking_direction = None
+                self.status.set_state(MountState.IDLE)
+                
+                logger.info("Tracking stopped successfully")
+                return True
+                
+        except Exception as e:
+            logger.error(f"Failed to stop tracking: {e}")
+            return False
+    
+    async def park(self, ha: float = 0.0, dec: float = -20.0) -> bool:
+        """
+        Park telescope at specified coordinates (async).
+        
+        Parks the telescope at a safe position for shutdown or maintenance.
+        Default park position is on the meridian (HA=0) pointing south.
+        
+        Args:
+            ha: Park hour angle in hours (default: 0.0 - on meridian)
+            dec: Park declination in degrees (default: -20.0 - pointing south)
+            
+        Returns:
+            True if parking started successfully
+        """
+        if not self._initialized:
+            logger.error("Telescope not initialized")
+            return False
+        
+        logger.info(f"Parking telescope at HA={ha:.3f}h, Dec={dec:.1f}°")
+        
+        try:
+            async with self._command_lock:
+                # Stop tracking if active
+                if self.status.state == MountState.TRACKING:
+                    logger.info("Stopping tracking before parking")
+                    await self.stop_tracking()
+                
+                # Check if position is safe and reachable
+                if not self.coords or not self.coords.is_position_reachable(ha, dec):
+                    logger.error(f"Park position not reachable: HA={ha:.4f}h, Dec={dec:.3f}°")
+                    return False
+                
+                if not self._check_slew_safety(ha, dec):
+                    logger.error("Park position fails safety checks")
+                    return False
+                
+                # Enable parking mode
+                self._parking_mode = True
+                self._park_position = (ha, dec)
+                self.status.set_state(MountState.PARKING)
+                
+                # Set conservative motion parameters for parking
+                motion_params = self.config.get_motion_params('precise')
+                await self._set_motion_parameters(motion_params)
+                
+                # Execute slew to park position
+                success = await self._slew_to_coordinates_async(ha, dec)
+                
+                if success:
+                    logger.info("Parking sequence started - telescope will move to park position")
+                    return True
+                else:
+                    self._parking_mode = False
+                    self._park_position = None
+                    logger.error("Failed to start parking slew")
+                    return False
+                
+        except Exception as e:
+            logger.error(f"Parking failed: {e}")
+            self._parking_mode = False
+            self._park_position = None
+            self.status.set_state(MountState.ERROR)
+            return False
+    
+    async def unpark(self) -> bool:
+        """
+        Unpark telescope (changes state from PARKED to IDLE).
+        
+        This is a state change operation - no physical movement occurs.
+        The telescope is ready for normal operations after unparking.
+        
+        Returns:
+            True if successful
+        """
+        if self.status.state != MountState.PARKED:
+            logger.warning(f"Cannot unpark: telescope is in {self.status.state.value} state")
+            return False
+        
+        logger.info("Unparking telescope")
+        
+        try:
+            async with self._command_lock:
+                # Clear park state
+                self._park_position = None
+                
+                # Change state to idle - telescope is now ready for operations
+                self.status.set_state(MountState.IDLE)
+                
+                logger.info("Telescope unparked - ready for operations")
+                return True
+                
+        except Exception as e:
+            logger.error(f"Unpark failed: {e}")
+            return False
+    
+    async def go_to_park_position(self) -> bool:
+        """
+        Move telescope to the last known park position.
+        
+        Returns:
+            True if slew to park position started successfully
+        """
+        if not self._park_position:
+            logger.error("No park position stored - use park() to set one")
+            return False
+        
+        ha, dec = self._park_position
+        logger.info(f"Moving to stored park position: HA={ha:.3f}h, Dec={dec:.1f}°")
+        
+        return await self.park(ha, dec)
+    
+    def get_park_position(self) -> Optional[Tuple[float, float]]:
+        """
+        Get the current park position.
+        
+        Returns:
+            Tuple of (ha, dec) if park position is set, None otherwise
+        """
+        return self._park_position
+    
+    def is_parked(self) -> bool:
+        """Check if telescope is currently parked"""
+        return self.status.state == MountState.PARKED
     
     async def _start_monitoring(self) -> None:
         """Start async status monitoring"""
@@ -649,8 +797,13 @@ class AsyncTelescopeDriver:
             except Exception as e:
                 logger.error(f"Error sending final stop commands: {e}")
             
-            # Update state
-            self.status.set_state(MountState.IDLE)
+            # Update state based on mode
+            if self._parking_mode:
+                logger.info("Parking completed - telescope is now parked")
+                self.status.set_state(MountState.PARKED)
+                self._parking_mode = False
+            else:
+                self.status.set_state(MountState.IDLE)
             
             # Clear targets
             self._commanded_ha_target = None
