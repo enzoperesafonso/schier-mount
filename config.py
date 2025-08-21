@@ -44,7 +44,7 @@ class TelescopeConfig:
         return {
             # Serial communication settings
             'serial': {
-                'port': '/dev/ttyUSB0',
+                'port': '/dev/ttyS0',
                 'baudrate': 9600,
                 'timeout': 3.0,
                 'retries': 3
