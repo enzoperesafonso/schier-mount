@@ -687,18 +687,18 @@ class AsyncTelescopeDriver:
             if current_ha is not None and current_dec is not None:
                 # Move to meridian (HA=0) and slightly positive declination
                 safe_ha = 0.0  # Hour angle = 0 (on meridian)
-                safe_dec = max(-20.0, current_dec + 5.0)  # Move at least 5° from current dec
+                safe_dec = -90  # Move at least 5° from current dec
                 
                 logger.info(f"Calculated safe position: HA={safe_ha:.3f}h, Dec={safe_dec:.1f}°")
                 return safe_ha, safe_dec
             else:
                 # Fallback safe position
                 logger.warning("Using fallback safe position")
-                return 0.0, -15.0  # Meridian, 15° south
+                return 0.0, -90  # Meridian, 15° south
                 
         except Exception as e:
             logger.error(f"Error calculating safe position: {e}")
-            return 0.0, -15.0
+            return 0.0, -90
     
     def _check_slew_safety(self, ha: float, dec: float) -> bool:
         """Check if slew target is safe"""
