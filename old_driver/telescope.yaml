@@ -1,0 +1,63 @@
+{include _comm.yaml}
+{include _environment.yaml}
+
+class: pyobs_rotse.RotseTelescope
+
+comm:
+  <<: *comm
+  user: telescope
+  password: pyobs
+
+
+# check weather !
+# weather: weather
+
+
+  # Mount calibration data
+calibration_data:
+  # Physical encoder limits (in encoder steps)
+  # ONLY store the home position limits - calculated limits are computed dynamically
+  limits:
+    ha_positive: 3447618   # Positive HA limit (home position after homing)
+    dec_negative: -1560846 # Negative Dec limit (home position after homing)
+    # ha_negative and dec_positive are calculated from home + ranges, never stored
+
+  # Encoder ranges
+  ranges:
+    ha_encoder_range: 4492409   # Total HA encoder range
+    dec_encoder_range: 4535993   # Total Dec encoder range
+
+  # Calibration constants
+  dec_steps_per_degree: 19408  # Dec encoder steps per degree
+  sidereal_rate_ha_steps_per_sec: 104  # Sidereal tracking rate
+
+  # Safety factors
+  limits_safety_factor: 0.05  # 5% buffer from hard limits
+
+  # Movement tolerances
+  slew_tolerance_steps: 5000        # Steps within target = "arrived"
+  movement_detection_tolerance: 50   # Steps for detecting motion
+  tracking_safety_buffer_steps: 1000 # Safety buffer for tracking limits
+
+  # Timing parameters
+  position_update_interval: 0.1      # Position update frequency (seconds)
+  max_slew_time_seconds: 300        # Maximum slew timeout
+
+  # Initialization parameters
+  initialization:
+    init_slew_speed_ha: 30000        # HA slew speed for init moves
+    init_slew_speed_dec: 30000       # Dec slew speed for init moves
+    init_move_timeout_seconds: 180   # Timeout for initialization moves
+
+  # Known physical positions after homing for auto-calibration
+  home_positions:
+    ha_encoder_at_home: 3447618      # Expected HA encoder at positive limit (matches ha_positive)
+    dec_encoder_at_home: -1560846    # Expected Dec encoder at negative limit (matches dec_negative)
+
+  # Auto-calibration settings
+  auto_calibration:
+    enabled: true                    # Enable auto-calibration
+    tolerance_steps: 1000            # Max acceptable drift before recalibration
+    calibrate_on_init: true          # Run calibration every init
+    max_correction_steps: 5000       # Max correction to apply (safety limit)
+
