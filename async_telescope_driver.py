@@ -222,9 +222,19 @@ class AsyncTelescopeDriver:
                     if not await self._slew_to_coordinates_async(safe_ha, safe_dec):
                         logger.warning("Failed to reach safe position, but initialization succeeded")
                     else:
-                        logger.info("Moved to safe position successfully")
+                        logger.info("Slew to safe position started, waiting for completion...")
+                        
+                        # Wait for slew completion while staying in INITIALIZING state
+                        safety_config = self.config.get_safety_config()
+                        timeout = safety_config.get('slew_timeout_seconds', 300.0)
+                        tolerance = safety_config.get('initialization_tolerance_steps', 2000)
+                        
+                        if await self._wait_for_slew_completion_async(timeout, tolerance):
+                            logger.info("Moved to safe position successfully")
+                        else:
+                            logger.warning("Safe position move timed out, but initialization succeeded")
                 
-                # Mark as initialized
+                # Mark as initialized only after everything is complete
                 self._initialized = True
                 self.status.set_state(MountState.IDLE)
                 
@@ -676,6 +686,55 @@ class AsyncTelescopeDriver:
                 
         except Exception as e:
             logger.error(f"Async tracking safety check failed: {e}")
+    
+    async def _wait_for_slew_completion_async(self, timeout: float, tolerance: int) -> bool:
+        """Wait for slew completion with custom parameters (async)"""
+        start_time = time.time()
+        
+        # Store original tolerance and temporarily set new one
+        safety_config = self.config.get_safety_config()
+        original_tolerance = safety_config.get('position_tolerance_steps', 5000)
+        safety_config['position_tolerance_steps'] = tolerance
+        
+        try:
+            while time.time() - start_time < timeout:
+                # Check if slew is complete
+                if (self._commanded_ha_target is not None and 
+                    self._commanded_dec_target is not None):
+                    
+                    ha_at_target = self._is_axis_at_target("RA")
+                    dec_at_target = self._is_axis_at_target("Dec")
+                    
+                    if ha_at_target and dec_at_target:
+                        logger.info("Slew to safe position completed")
+                        
+                        # Send final stop commands
+                        try:
+                            await asyncio.gather(
+                                self.comm.send_command("$StopRA", "@StopRA"),
+                                self.comm.send_command("$StopDec", "@StopDec")
+                            )
+                            await asyncio.sleep(0.2)
+                        except Exception as e:
+                            logger.error(f"Error sending final stop commands: {e}")
+                        
+                        # Clear targets
+                        self._commanded_ha_target = None
+                        self._commanded_dec_target = None
+                        self._slew_start_time = None
+                        
+                        return True
+                
+                # Update status and wait
+                await self._update_telescope_status()
+                await asyncio.sleep(0.5)
+            
+            logger.error(f"Slew to safe position did not complete within {timeout} seconds")
+            return False
+            
+        finally:
+            # Restore original tolerance
+            safety_config['position_tolerance_steps'] = original_tolerance
     
     # Helper methods (sync)
     def _calculate_safe_position(self) -> Tuple[float, float]:

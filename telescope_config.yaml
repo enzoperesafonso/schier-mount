@@ -62,7 +62,7 @@ tracking:
 # Safety parameters
 safety:
   slew_timeout_seconds: 300.0             # Maximum slew time
-  position_tolerance_steps: 5000          # Position tolerance for slew completion
+  position_tolerance_steps: 1000          # Position tolerance for slew completion
   initialization_tolerance_steps: 2000    # Tighter tolerance for initialization moves
   safety_margin_steps: 20000              # Safety margin from encoder limits
   max_position_error_steps: 15000         # Maximum position error before alert

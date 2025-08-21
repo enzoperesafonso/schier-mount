@@ -73,9 +73,9 @@ class TelescopeConfig:
             'motion': {
                 'normal': {
                     'ha_velocity': 30000,
-                    'dec_velocity': 15000,
+                    'dec_velocity': 30000,
                     'ha_acceleration': 3000,
-                    'dec_acceleration': 1000
+                    'dec_acceleration': 1500
                 },
                 'fast': {
                     'ha_velocity': 50000,
