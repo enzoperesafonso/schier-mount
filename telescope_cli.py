@@ -16,7 +16,7 @@ from datetime import datetime
 # Add current directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent))
 
-from async_telescope_driver import AsyncTelescopeDriver, SlewMode, InitializationResult
+from mount_driver import AsyncTelescopeDriver, SlewMode, InitializationResult
 from state import MountState, TrackingMode, PierSide
 
 
