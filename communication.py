@@ -346,7 +346,12 @@ class AsyncTelescopeCommunication:
             return None
 
     async def emergency_stop(self) -> bool:
-        """Send emergency stop commands with highest priority"""
+        """
+        Send emergency stop commands with proper serial handling.
+        
+        CRITICAL: Emergency stop must handle serial communication carefully
+        to prevent desync issues with the sensitive ROTSE-III controller.
+        """
         logger.critical("Sending emergency stop commands")
         
         try:
@@ -354,20 +359,61 @@ class AsyncTelescopeCommunication:
                 if not self.is_connected():
                     return False
                 
-                # Send stop commands immediately
+                # CRITICAL: Flush buffers first to prevent desync
+                logger.warning("Emergency: Flushing serial buffers to prevent desync")
+                if self._writer:
+                    # Clear any pending responses
+                    try:
+                        # Drain the writer
+                        await self._writer.drain()
+                        
+                        # Try to read any pending data with short timeout
+                        try:
+                            while True:
+                                data = await asyncio.wait_for(self._reader.read(1024), timeout=0.1)
+                                if not data:
+                                    break
+                                logger.debug(f"Emergency flush: discarded {len(data)} bytes")
+                        except asyncio.TimeoutError:
+                            # No more data available - good
+                            pass
+                    except Exception as e:
+                        logger.error(f"Error during emergency buffer flush: {e}")
+                
+                # Send stop commands with proper response handling
                 commands = ["$StopRA", "$StopDec"]
                 success = True
                 
                 for cmd in commands:
                     try:
-                        cmd_with_crc = CRC16.append_to_command(cmd)
-                        self._writer.write(cmd_with_crc.encode('ascii'))
-                        await self._writer.drain()
-                        logger.info(f"Emergency command sent: {cmd}")
+                        # Send command using the proper method (waits for response)
+                        logger.info(f"Sending emergency command: {cmd}")
+                        response = await self.send_command(cmd, f"@{cmd}", timeout=2.0, retries=1)
+                        
+                        if response is not None:
+                            logger.info(f"Emergency command successful: {cmd}")
+                        else:
+                            logger.warning(f"Emergency command may have failed: {cmd}")
+                            success = False
+                        
+                        # Small delay between commands
+                        await asyncio.sleep(0.1)
                         
                     except Exception as e:
                         logger.error(f"Emergency stop command failed: {cmd} - {e}")
                         success = False
+                
+                # Additional safety: send commands again without waiting for responses
+                # This ensures the telescope stops even if communication is problematic
+                logger.critical("Emergency: Sending additional stop commands without response")
+                for cmd in commands:
+                    try:
+                        cmd_with_crc = CRC16.append_to_command(cmd)
+                        self._writer.write(cmd_with_crc.encode('ascii'))
+                        await self._writer.drain()
+                        logger.info(f"Emergency raw command sent: {cmd}")
+                    except Exception as e:
+                        logger.error(f"Emergency raw command failed: {cmd} - {e}")
                 
                 return success
                 
@@ -432,6 +478,73 @@ class AsyncTelescopeCommunication:
     def is_connected(self) -> bool:
         """Check if serial port is connected"""
         return self._connected and self._writer is not None
+    
+    async def recover_from_desync(self) -> bool:
+        """
+        Recover from serial communication desync.
+        
+        This method attempts to recover from desync issues that can occur
+        with the ROTSE-III controller, particularly after emergency stops.
+        
+        Returns:
+            True if recovery was successful
+        """
+        logger.warning("Attempting serial desync recovery")
+        
+        try:
+            async with self._command_lock:
+                if not self.is_connected():
+                    return False
+                
+                # Step 1: Flush all buffers aggressively
+                logger.info("Recovery Step 1: Aggressive buffer flush")
+                if self._writer:
+                    try:
+                        await self._writer.drain()
+                        
+                        # Read everything available with longer timeout
+                        bytes_discarded = 0
+                        try:
+                            while True:
+                                data = await asyncio.wait_for(self._reader.read(1024), timeout=0.5)
+                                if not data:
+                                    break
+                                bytes_discarded += len(data)
+                        except asyncio.TimeoutError:
+                            pass
+                        
+                        if bytes_discarded > 0:
+                            logger.info(f"Recovery: Discarded {bytes_discarded} bytes from buffer")
+                    except Exception as e:
+                        logger.error(f"Recovery buffer flush failed: {e}")
+                
+                # Step 2: Send a simple test command and wait longer
+                logger.info("Recovery Step 2: Testing with simple command")
+                try:
+                    response = await self.send_command("$Status2RA", "@Status2RA", timeout=5.0, retries=1)
+                    if response is not None:
+                        logger.info("Recovery successful - communication restored")
+                        return True
+                    else:
+                        logger.warning("Recovery test command failed")
+                except Exception as e:
+                    logger.error(f"Recovery test command failed: {e}")
+                
+                # Step 3: Reset statistics to prevent error accumulation
+                logger.info("Recovery Step 3: Resetting communication statistics")
+                self._stats = {
+                    'commands_sent': 0,
+                    'responses_received': 0,
+                    'crc_errors': 0,
+                    'timeouts': 0,
+                    'buffer_flushes': 0
+                }
+                
+                return False
+                
+        except Exception as e:
+            logger.error(f"Desync recovery failed: {e}")
+            return False
 
     async def __aenter__(self):
         """Async context manager entry"""

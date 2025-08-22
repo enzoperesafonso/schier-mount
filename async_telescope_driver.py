@@ -548,7 +548,7 @@ class AsyncTelescopeDriver:
             logger.error(f"Failed to stop tracking: {e}")
             return False
     
-    async def park(self, ha: float = 0.0, dec: float = -20.0) -> bool:
+    async def park(self, ha: float = 0.0, dec: float = -90.0) -> bool:
         """
         Park telescope at specified coordinates (async).
         
@@ -590,7 +590,7 @@ class AsyncTelescopeDriver:
                 self.status.set_state(MountState.PARKING)
                 
                 # Set conservative motion parameters for parking
-                motion_params = self.config.get_motion_params('precise')
+                motion_params = self.config.get_motion_params('normal')
                 await self._set_motion_parameters(motion_params)
                 
                 # Execute slew to park position

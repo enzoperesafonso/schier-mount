@@ -71,6 +71,7 @@ class TelescopeCLI:
             'config': self.cmd_show_config,
             'monitor': self.cmd_monitor,
             'raw': self.cmd_raw_command,
+            'recover': self.cmd_recover_desync,
             'quit': self.cmd_quit,
             'exit': self.cmd_quit,
             'q': self.cmd_quit
@@ -179,7 +180,8 @@ class TelescopeCLI:
                 "raw <command>": "Send raw command to telescope"
             },
             "Safety": {
-                "emergency, estop": "Emergency stop all motion"
+                "emergency, estop": "Emergency stop all motion",
+                "recover": "Recover from serial communication desync"
             },
             "System": {
                 "help, h": "Show this help",
@@ -733,6 +735,27 @@ class TelescopeCLI:
             print("✅ Emergency stop commands sent")
         else:
             print("❌ Emergency stop failed")
+    
+    async def cmd_recover_desync(self, args):
+        """Recover from serial communication desync"""
+        if not await self._check_connection():
+            return
+        
+        print("🔧 Attempting serial communication recovery...")
+        print("This may help resolve desync issues after emergency stops.")
+        
+        try:
+            success = await self.telescope.comm.recover_from_desync()
+            
+            if success:
+                print("✅ Serial communication recovered successfully!")
+                print("💡 Try running 'status' or 'test' to verify communication")
+            else:
+                print("❌ Recovery failed - communication may still have issues")
+                print("💡 You may need to disconnect and reconnect")
+                
+        except Exception as e:
+            print(f"❌ Recovery failed: {e}")
     
     async def cmd_show_config(self, args):
         """Show current configuration"""
