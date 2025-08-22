@@ -134,8 +134,8 @@ class AsyncTelescopeDriver:
             # Update initial status
             await self._update_telescope_status()
             
-            # Set initial state
-            self.status.set_state(MountState.IDLE)
+            # Set initial state to PARKED (telescope starts parked for safety)
+            self.status.set_state(MountState.PARKED)
             
             logger.info("Telescope connected successfully")
             return True
