@@ -532,6 +532,11 @@ class MountComm:
             # Make sure the mount is actually stopped before any movement or else we get an error!
             self.stop_motion()
 
+            # --- We need to 'ready' the servos for movement before giving commands"---
+            self._send_command("RunRa", vel_ra)
+            self._send_command("RunDec", vel_dec)
+
+
             # --- 3. Send Targets (Load the Registers) ---
             # Note: This does NOT move the mount yet. It just tells the controller
             # "If I tell you to go, this is where you go."
@@ -545,11 +550,6 @@ class MountComm:
             # drive towards the 'Pos' target set above.
             self._send_command("VelRa", vel_ra)
             self._send_command("VelDec", vel_dec)
-
-            # --- 4. This stupid piece of shit needs the "run command"---
-            self._send_command("RunRa", vel_ra)
-            self._send_command("RunDec", vel_dec)
-
 
 
         except MountConnectionError as e:
