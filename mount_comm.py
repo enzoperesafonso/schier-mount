@@ -259,38 +259,41 @@ class MountComm:
         """
         Retrieves the Command (Target) and Actual (Encoder) positions.
 
-        Args:
-            axis_index: 0 for RA, 1 for Dec.
-
-        Returns:
-            tuple: (target_position, actual_position) in encoder counts.
+        Format: "@Status1Dec [Command Pos], [Actual Pos][CRC]"
+        Example: "@Status1Dec 1836177.0, 1836177.0 7ED3"
         """
-
         if axis_index == 0:
             cmd_key = "Status1RA"
         elif axis_index == 1:
             cmd_key = "Status1Dec"
         else:
-            raise ValueError(f"Invalid axis index: {axis_index} (Must be 0 or 1)")
+            raise ValueError(f"Invalid axis index: {axis_index}")
 
-        # Send Command and Get Response
+        # Send Command
         response = self.send_command(cmd_key)
 
-        # Parse the Response
         try:
-            # Strip the 4-char CRC from the end first to avoid parsing errors
-            clean_response = response[:-4]
+            # 1. Strip the CRC (Last 4 chars)
+            # Raw: "@Status1Dec 1836177.0, 1836177.0 7ED3"
+            # Cut: "@Status1Dec 1836177.0, 1836177.0 "
+            body = response[:-4].strip()
 
-            # Split by comma
-            parts = clean_response.split(',')
+            # 2. Split using Regex
+            # This handles the specific format: Space-Number-Comma-Space-Number
+            import re
+            tokens = re.split(r'[ ,]+', body)
 
-            # Parts should look like: ['$Status1RA', ' 1000', ' 1005', ' 0000']
-            if len(parts) < 3:
+            # Result tokens: ['@Status1Dec', '1836177.0', '1836177.0']
+
+            if len(tokens) < 3:
+                self.logger.error(f"Tokenization failed. Tokens: {tokens}")
                 raise ValueError(f"Malformed response: {response}")
 
-            # Parse integers (Python handles the leading spaces automatically)
-            target_pos = int(parts[1])
-            actual_pos = int(parts[2])
+            # 3. Parse Numbers
+            # We MUST use float() first because the log showed '.0' in the string.
+            # int('100.0') crashes Python, but int(float('100.0')) works.
+            target_pos = int(float(tokens[1]))
+            actual_pos = int(float(tokens[2]))
 
             return target_pos, actual_pos
 
