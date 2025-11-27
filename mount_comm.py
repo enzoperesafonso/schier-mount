@@ -544,8 +544,11 @@ class MountComm:
             # Setting velocity > 0 causes the PID controller to activate and
             # drive towards the 'Pos' target set above.
             self._send_command("VelRa", vel_ra)
-
             self._send_command("VelDec", vel_dec)
+
+            # --- 4. This stupid piece of shit needs the "run command"---
+            self._send_command("RunRa", vel_ra)
+            self._send_command("RunDec", vel_dec)
 
 
 
