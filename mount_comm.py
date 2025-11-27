@@ -46,6 +46,9 @@ class MountComm:
             'AMP_DISABLE': 0x0010
         }
 
+        self._send_command("AccelRa", 1000)
+        self._send_command("AccelDec", 1000)
+
     def _stop_axis(self, axis_index: int):
         """
         Sends a Stop command to the specified axis and verifies mount health.
