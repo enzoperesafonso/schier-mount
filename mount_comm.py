@@ -456,6 +456,7 @@ class MountComm:
             # 2. Set Homing Velocities
             # The mount needs to know how fast to spin while looking for the sensor.
             # We set this BEFORE the Home command.
+            self.stop_motion()
             self._send_command("VelRa", self.HOME_SPEED_RA)
             self._send_command("VelDec", self.HOME_SPEED_DEC)
 
