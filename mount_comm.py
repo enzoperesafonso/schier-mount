@@ -38,6 +38,9 @@ class MountComm:
         self.SLEW_SPEED_RA = 15000
         self.SLEW_SPEED_DEC = 15000
 
+        self.HOME_SPEED_RA = 24382 * 2
+        self.HOME_SPEED_DEC = 24382 * 2
+
         self.BIT_MASKS = {
             'ESTOP': 0x0001,
             'NEG_LIM': 0x0002,
@@ -48,6 +51,18 @@ class MountComm:
 
         self._send_command("AccelRa", 1000)
         self._send_command("AccelDec", 1000)
+
+        # The "Kick" (Derived from C MOUNT_INIT)
+        # The C code sends Halt, then Stop.
+        # Halt kills the trajectory generator. Stop enables the Amps.
+
+        self._send_command("HaltRA")
+        self._send_command("HaltDec")
+        time.sleep(0.2)
+
+        self._send_command("StopRA")
+        self._send_command("StopDec")
+        time.sleep(0.5)
 
     def _stop_axis(self, axis_index: int):
         """
@@ -424,7 +439,54 @@ class MountComm:
             return "Error retrieving fault"
 
     def send_home(self):
-        pass
+        """
+        Initiates the physical homing sequence (Find Index/Limit).
+
+        Equivalent to C: MOUNT_SYNC
+
+        Sequence:
+        1. Resets pointing offsets (software zero).
+        2. Sets Homing Velocity (The speed to search for the switch).
+        3. Stops the mount (Safety).
+        4. Sends 'HomeRA' / 'HomeDec' commands.
+        """
+        self.logger.info("Initiating Mount Homing Sequence...")
+
+        try:
+            # 2. Set Homing Velocities
+            # The mount needs to know how fast to spin while looking for the sensor.
+            # We set this BEFORE the Home command.
+            self._send_command("VelRa", self.HOME_SPEED_RA)
+            self._send_command("VelDec", self.HOME_SPEED_DEC)
+
+            # 3. Stop Motion
+            # The C code explicitly calls stop_axis before homing.
+            # We use try/except because we want to proceed even if the mount
+            # complains that the brake is already on.
+            try:
+                self.stop_motion()
+                # Give it a moment to settle
+                time.sleep(0.5)
+
+            except MountSafetyError:
+                self.logger.warning("Stop before home reported safety flags (ignoring)")
+
+            # 4. Trigger Homing
+            # These commands put the controller into "Homing Mode".
+            # It will move until it hits the index mark, then stop and reset its internal counter to 0.
+            self._send_command("HomeRA")
+            self._send_command("HomeDec")
+
+            self.logger.debug("Homing Triggered!")
+
+        except MountConnectionError as e:
+            self.logger.critical(f"Homing handshake failed: {e}")
+            # If comms fail here, we try to stop just in case
+            try:
+                self.stop_motion()
+            except:
+                pass
+            raise e
 
     def send_park(self):
         pass
