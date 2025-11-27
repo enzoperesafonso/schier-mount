@@ -536,15 +536,18 @@ class MountComm:
             # Note: This does NOT move the mount yet. It just tells the controller
             # "If I tell you to go, this is where you go."
             self._send_command("PosRA", ra_pos)
-            self._send_command("VelRa", vel_ra)
+            self._send_command("PosDec", dec_pos)
+
 
 
             # --- 4. Send Velocities (The Trigger) ---
             # Setting velocity > 0 causes the PID controller to activate and
             # drive towards the 'Pos' target set above.
+            self._send_command("VelRa", vel_ra)
 
             self._send_command("VelDec", vel_dec)
-            self._send_command("PosDec", dec_pos)
+
+
 
         except MountConnectionError as e:
             # If the command sequence breaks halfway, we are in an unknown state.
