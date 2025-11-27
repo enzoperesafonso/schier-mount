@@ -35,6 +35,9 @@ class MountComm:
         self.serial = serial.Serial(port, baudrate, timeout=1.0)
         self.MAX_RETRIES = 3
 
+        self.SLEW_SPEED_RA = 15000
+        self.SLEW_SPEED_DEC = 15000
+
         self.BIT_MASKS = {
             'ESTOP': 0x0001,
             'NEG_LIM': 0x0002,
@@ -442,13 +445,13 @@ class MountComm:
         # --- 1. Safety Checks (Bounds) ---
         # Import limits from your rotse_defs.py
         # You should define these based on your specific hardware limits
-        if not (self.RA_MIN <= ra_pos <= self.RA_MAX):
-            self.logger.error(f"Slew Rejected: RA {ra_pos} out of bounds.")
-            raise MountInputError(f"RA Target {ra_pos} exceeds limits")
-
-        if not (self.DEC_MIN <= dec_pos <= self.DEC_MAX):
-            self.logger.error(f"Slew Rejected: Dec {dec_pos} out of bounds.")
-            raise MountInputError(f"Dec Target {dec_pos} exceeds limits")
+        # if not (self.RA_MIN <= ra_pos <= self.RA_MAX):
+        #     self.logger.error(f"Slew Rejected: RA {ra_pos} out of bounds.")
+        #     raise MountInputError(f"RA Target {ra_pos} exceeds limits")
+        #
+        # if not (self.DEC_MIN <= dec_pos <= self.DEC_MAX):
+        #     self.logger.error(f"Slew Rejected: Dec {dec_pos} out of bounds.")
+        #     raise MountInputError(f"Dec Target {dec_pos} exceeds limits")
 
         # --- 2. Determine Speed ---
         # If no speed provided, use max slew speed (defined in constants)
