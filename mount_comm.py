@@ -52,17 +52,35 @@ class MountComm:
         self._send_command("AccelRa", 1000)
         self._send_command("AccelDec", 1000)
 
-        # The "Kick" !
-        # The C code sends Halt, then Stop.
-        # Halt kills the trajectory generator. Stop enables the Amps.
+        self.recover_servo_state()
 
-        self._send_command("HaltRA")
-        self._send_command("HaltDec")
-        time.sleep(0.2)
+    def recover_servo_state(self):
+        """
+        Forces the controller out of a fault/latch state.
+        """
+        self.logger.warning("Attempting Servo Recovery (i.e. giving the mount a kick!)...")
 
-        self._send_command("StopRA")
-        self._send_command("StopDec")
-        time.sleep(0.5)
+        try:
+            # The "Kick" !
+            # The C code sends Halt, then Stop.
+            # Halt kills the trajectory generator. Stop enables the Amps.
+
+            self._send_command("VelRa", 0)
+            self._send_command("VelDec", 0)
+
+            self._send_command("HaltRA")
+            self._send_command("HaltDec")
+            time.sleep(0.2)
+
+            self._send_command("StopRA")
+            self._send_command("StopDec")
+            time.sleep(0.5)
+
+        except Exception as e:
+            self.logger.error(f"Recovery failed: {e}")
+
+
+
 
     def _stop_axis(self, axis_index: int):
         """
