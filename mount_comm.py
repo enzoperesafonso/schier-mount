@@ -67,7 +67,7 @@ class MountComm:
         # 2. Send the Stop Command
         # The mount should reply (e.g. "$StopRA<CRC>") confirming receipt.
         try:
-            self.send_command(cmd_key)
+            self._send_command(cmd_key)
         except MountConnectionError as e:
             # If the stop command fails to send, we are in trouble.
             self.logger.critical(f"FAILED TO SEND STOP COMMAND TO AXIS {axis_index}: {e}")
@@ -176,7 +176,7 @@ class MountComm:
 
         return True
 
-    def send_command(self, cmd_key: str, value=None) -> str:
+    def _send_command(self, cmd_key: str, value=None) -> str:
         """
         Constructs a command packet, sends it to the mount, and returns the verified response.
 
@@ -270,7 +270,7 @@ class MountComm:
             raise ValueError(f"Invalid axis index: {axis_index}")
 
         # Send Command
-        response = self.send_command(cmd_key)
+        response = self._send_command(cmd_key)
 
         try:
             # 1. Strip the CRC (Last 4 chars)
@@ -323,7 +323,7 @@ class MountComm:
         # 2. Send & Receive
         # Expected Format: "$Status2RA, <Word1_Hex>, <Word2_Hex><CRC>"
         # Example: "$Status2RA, 0000, 0010A1B2"
-        response = self.send_command(cmd_key)
+        response = self._send_command(cmd_key)
 
         try:
             clean_response = response[:-4]  # Strip CRC
@@ -417,7 +417,10 @@ class MountComm:
             self.logger.error(f"Failed to get fault history: {e}")
             return "Error retrieving fault"
 
-    def home_mount(self):
+    def send_home(self):
+        pass
+
+    def send_park(self):
         pass
 
     def move_to(self, ra_pos: int, dec_pos: int, speed_ra: float, speed_dec: float):
@@ -463,14 +466,14 @@ class MountComm:
             # --- 3. Send Targets (Load the Registers) ---
             # Note: This does NOT move the mount yet. It just tells the controller
             # "If I tell you to go, this is where you go."
-            self.send_command("PosRA", ra_pos)
-            self.send_command("PosDec", dec_pos)
+            self._send_command("PosRA", ra_pos)
+            self._send_command("PosDec", dec_pos)
 
             # --- 4. Send Velocities (The Trigger) ---
             # Setting velocity > 0 causes the PID controller to activate and
             # drive towards the 'Pos' target set above.
-            self.send_command("VelRa", vel_ra)
-            self.send_command("VelDec", vel_dec)
+            self._send_command("VelRa", vel_ra)
+            self._send_command("VelDec", vel_dec)
 
         except MountConnectionError as e:
             # If the command sequence breaks halfway, we are in an unknown state.
@@ -505,8 +508,8 @@ class MountComm:
         # This ensures that if the 'Stop' latch is released, 
         # the mount doesn't try to resume the previous speed.
         try:
-            self.send_command("VelRa", 0)
-            self.send_command("VelDec", 0)
+            self._send_command("VelRa", 0)
+            self._send_command("VelDec", 0)
         except Exception:
             pass  # If comms are bad, we did our best with stop_axis above.
 
