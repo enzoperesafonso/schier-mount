@@ -52,7 +52,7 @@ class MountComm:
         self._send_command("AccelRa", 1000)
         self._send_command("AccelDec", 1000)
 
-        # The "Kick" (Derived from C MOUNT_INIT)
+        # The "Kick" !
         # The C code sends Halt, then Stop.
         # Halt kills the trajectory generator. Stop enables the Amps.
 
