@@ -54,8 +54,3 @@ def calculate_crc(input_string: str) -> str:
 
     # Return lowercase hex to match C format
     return f"{crc & 0xFFFF:04x}"
-
-
-
-
-print(calculate_crc("$VelRa, 100"))

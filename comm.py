@@ -49,10 +49,28 @@ class MountComm:
             'AMP_DISABLE': 0x0010
         }
 
+        # setup acceleration and kick on mount ...
         self._send_command("AccelRa", 1000)
         self._send_command("AccelDec", 1000)
 
         self.recover_servo_state()
+
+    def disconnect(self):
+        """
+        Put the mount in a safe state so we can close programmes
+        """
+        self.logger.debug("Disconnecting Mount!")
+
+        try:
+
+            self.stop_motion()
+
+            time.sleep(0.5)
+
+            self.serial.close()
+
+        except Exception as e:
+            self.logger.error(f"Disconnection failed: {e}")
 
     def recover_servo_state(self):
         """
@@ -78,9 +96,6 @@ class MountComm:
 
         except Exception as e:
             self.logger.error(f"Recovery failed: {e}")
-
-
-
 
     def _stop_axis(self, axis_index: int):
         """
@@ -554,14 +569,11 @@ class MountComm:
             self._send_command("RunRa", vel_ra)
             self._send_command("RunDec", vel_dec)
 
-
             # --- 3. Send Targets (Load the Registers) ---
             # Note: This does NOT move the mount yet. It just tells the controller
             # "If I tell you to go, this is where you go."
             self._send_command("PosRA", ra_pos)
             self._send_command("PosDec", dec_pos)
-
-
 
             # --- 4. Send Velocities (The Trigger) ---
             # Setting velocity > 0 causes the PID controller to activate and
