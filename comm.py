@@ -6,31 +6,45 @@ import crc
 
 # --- Custom Exceptions for Clarity ---
 class MountError(Exception):
-    """Base class for mount errors."""
+    """Base class for exceptions in this module."""
     pass
 
 
 class MountConnectionError(MountError):
-    """Serial port timeouts, CRC failures, garbage data."""
+    """Raised for serial port timeouts, CRC failures, or garbage data."""
     pass
 
 
 class MountSafetyError(MountError):
-    """Limit switches, E-Stop, Motor faults."""
+    """Raised for safety-related errors like limit switches, E-Stop, or motor faults."""
     pass
 
 
 class MountMotionError(MountError):
-    """Mount stopped but did not reach target."""
+    """Raised when the mount stops but did not reach its target."""
     pass
 
 
 class MountInputError(MountError):
+    """Raised for invalid input values."""
     pass
 
 
 class MountComm:
+    """
+    Manages communication with the Schier mount controller.
+
+    This class handles the low-level serial communication protocol, including
+    command construction, CRC validation, and response parsing. It provides
+    higher-level methods for controlling the mount's motion, homing, and
+    status retrieval.
+
+    Args:
+        port (str): The serial port to connect to (e.g., "/dev/ttyS0").
+        baudrate (int): The baud rate for the serial communication.
+    """
     def __init__(self, port: str = "/dev/ttyS0", baudrate=9600):
+        """Initializes the MountComm object and opens the serial port."""
         self.logger = logging.getLogger("SchierMount")
         self.serial = serial.Serial(port, baudrate, timeout=1.0)
         self.MAX_RETRIES = 3
@@ -62,7 +76,9 @@ class MountComm:
 
     def disconnect(self):
         """
-        Put the mount in a safe state so we can close programmes
+        Safely disconnects from the mount.
+
+        This method stops any ongoing motion and closes the serial port.
         """
         self.logger.debug("Disconnecting Mount!")
 
@@ -79,7 +95,10 @@ class MountComm:
 
     def recover_servo_state(self):
         """
-        Forces the controller out of a fault/latch state.
+        Attempts to recover the servo motors from a fault state.
+
+        This sends a sequence of commands to clear any existing faults and
+        re-enable the motor amplifiers.
         """
         self.logger.warning("Attempting Servo Recovery (i.e. giving the mount a kick!)...")
 
@@ -107,9 +126,10 @@ class MountComm:
         Sends a Stop command to the specified axis and verifies mount health.
 
         Args:
-            axis_index: 0 for RA, 1 for Dec.
+            axis_index: The axis to stop (0 for RA, 1 for Dec).
 
         Raises:
+            ValueError: If an invalid axis index is provided.
             MountSafetyError: If the mount reports E-Stop, Brake, or Amp Disable
                               flags after the stop command.
         """
@@ -155,8 +175,11 @@ class MountComm:
 
     def _clear_comm(self):
         """
-        Clears the serial communication buffers and resets the mount's
-        command parser.
+        Clears serial communication buffers and resets the mount's command parser.
+
+        This is a recovery mechanism to be used when communication becomes
+        desynchronized. It flushes the serial buffers and sends a carriage
+        return to reset the mount's parser.
         """
         self.logger.debug("Clearing serial comm buffer ...")
 
@@ -186,14 +209,18 @@ class MountComm:
 
     def _validate_response(self, sent_command: str, response: str) -> bool:
         """
-        Validates the integrity of the response by:
-        1. Checking the CRC checksum.
-        2. Verifying the response 'echo' matches the command axis (RA/Dec).
+        Validates the integrity of a response from the mount.
+
+        This checks for a valid CRC checksum and verifies that the response
+        corresponds to the command that was sent (e.g., an 'RA' command
+        receives an 'RA' response).
 
         Args:
-            sent_command: The raw string we sent (e.g., "$VelRa, 100")
-            response: The raw string received (e.g., "$VelRa, 100a1b2")
-                      (Assumes \r has already been stripped)
+            sent_command: The command string sent to the mount.
+            response: The response string received from the mount.
+
+        Returns:
+            True if the response is valid, False otherwise.
         """
 
         # --- 1. Sanity Check ---
@@ -225,7 +252,7 @@ class MountComm:
         # Check RA Axis
         if "RA" in sent_command and "RA" not in body:
             self.logger.error(
-                f"Echo Error: Sent RA command '{sent_command}' but got '{body}'")  # Rykoff got to say "Shite" in his error logging, please can I?
+                f"Echo Error: Sent RA command '{sent_command}' but got '{body}'")
             return False
 
         # Check Dec Axis
@@ -237,17 +264,21 @@ class MountComm:
 
     def _send_command(self, cmd_key: str, value=None) -> str:
         """
-        Constructs a command packet, sends it to the mount, and returns the verified response.
+        Sends a command to the mount and waits for a valid response.
+
+        This method constructs a command packet, including the CRC checksum, 
+        and sends it to the mount. It will retry the command up to MAX_RETRIES
+        times if the communication fails.
 
         Args:
-            cmd_key: The command mnemonic (e.g., "VelRa", "PosDec")
-            value: Optional integer/float value to append (e.g., 1000)
+            cmd_key: The command key (e.g., "VelRa").
+            value: An optional value to send with the command.
 
         Returns:
-            str: The valid response string from the mount (excluding \r).
+            The response string from the mount.
 
         Raises:
-            MountConnectionError: If communication fails after MAX_RETRIES.
+            MountConnectionError: If the command fails after all retries.
         """
 
         # --- 1. Construct the Packet ---
@@ -316,10 +347,19 @@ class MountComm:
 
     def get_encoder_position(self, axis_index: int) -> tuple[int, int]:
         """
-        Retrieves the Command (Target) and Actual (Encoder) positions.
+        Retrieves the command and actual encoder positions for a given axis.
 
-        Format: "@Status1Dec [Command Pos], [Actual Pos][CRC]"
-        Example: "@Status1Dec 1836177.0, 1836177.0 7ED3"
+        Args:
+            axis_index: The axis to query (0 for RA, 1 for Dec).
+
+        Returns:
+            A tuple containing the command position and actual position, in
+            encoder counts.
+
+        Raises:
+            ValueError: If an invalid axis index is provided.
+            MountConnectionError: If the position cannot be parsed from the
+                                  mount's response.
         """
         if axis_index == 0:
             cmd_key = "Status1RA"
@@ -362,14 +402,23 @@ class MountComm:
 
     def get_axis_status_bits(self, axis_index: int) -> dict:
         """
-        Retrieves the hardware status words and parses safety flags.
+        Retrieves and parses the hardware status bits for a given axis.
 
         Args:
-            axis_index: 0 for RA, 1 for Dec.
+            axis_index: The axis to query (0 for RA, 1 for Dec).
 
         Returns:
-            dict: A dictionary containing raw words and interpreted flags.
-                  e.g. {'estop': False, 'brakes': True, 'raw_w1': 0x1234...}
+            A dictionary of status flags, including:
+            - 'estop': True if the emergency stop is active.
+            - 'neg_limit': True if the negative limit switch is active.
+            - 'pos_limit': True if the positive limit switch is active.
+            - 'brake_on': True if the brake is engaged.
+            - 'amp_disabled': True if the motor amplifier is disabled.
+
+        Raises:
+            ValueError: If an invalid axis index is provided.
+            MountConnectionError: If the status cannot be parsed from the
+                                  mount's response.
         """
 
         if axis_index == 0:
@@ -427,12 +476,11 @@ class MountComm:
         """
         Retrieves the last recorded fault string from the mount.
 
-        Special Behavior:
-        - Terminates read on semicolon ';'.
-        - Does NOT validate CRC on response (per original C code).
-        - Flushes buffer immediately after reading.
+        This command has special behavior: it reads until a semicolon is
+        received and does not validate the CRC of the response.
 
-        Equivalent to C: get_last_fault()
+        Returns:
+            The fault string from the mount.
         """
         # You need to find the string value for 'RecentFaults' in your C header.
         # It is likely just "RecentFaults" or "GetFaults".
@@ -478,15 +526,10 @@ class MountComm:
 
     def send_home(self):
         """
-        Initiates the physical homing sequence (Find Index/Limit).
+        Initiates the mount's homing sequence.
 
-        Equivalent to C: MOUNT_SYNC
-
-        Sequence:
-        1. Resets pointing offsets (software zero).
-        2. Sets Homing Velocity (The speed to search for the switch).
-        3. Stops the mount (Safety).
-        4. Sends 'HomeRA' / 'HomeDec' commands.
+        This sets the homing velocity, stops any existing motion, and then
+        sends the 'HomeRA' and 'HomeDec' commands to the mount.
         """
         self.logger.info("Initiating Mount Homing Sequence...")
 
@@ -531,16 +574,15 @@ class MountComm:
         """
         Commands the mount to move to a specific encoder position.
 
-        Sequence:
-        1. Validates Target against Limits.
-        2. Sends Target Positions (PosRA, PosDec).
-        3. Sends Velocities (VelRa, VelDec) <- This starts the motor.
+        This method sends the target position and velocity to the mount.
+        The sequence of commands is important: first the target positions are
+        set, then the velocities are set to initiate the motion.
 
         Args:
-            ra_pos: Target RA in encoder steps.
-            dec_pos: Target Dec in encoder steps.
-            speed_ra: (Optional) Speed in counts/sec. Defaults to SLEW_SPEED from defs.
-            speed_dec: (Optional) Speed in counts/sec.
+            ra_pos: The target RA position in encoder counts.
+            dec_pos: The target Dec position in encoder counts.
+            speed_ra: The speed for the RA axis in counts/sec.
+            speed_dec: The speed for the Dec axis in counts/sec.
         """
 
         # --- 1. Safety Checks (Bounds) ---
@@ -549,7 +591,7 @@ class MountComm:
         # if not (self.RA_MIN <= ra_pos <= self.RA_MAX):
         #     self.logger.error(f"Slew Rejected: RA {ra_pos} out of bounds.")
         #     raise MountInputError(f"RA Target {ra_pos} exceeds limits")
-        #
+        # 
         # if not (self.DEC_MIN <= dec_pos <= self.DEC_MAX):
         #     self.logger.error(f"Slew Rejected: Dec {dec_pos} out of bounds.")
         #     raise MountInputError(f"Dec Target {dec_pos} exceeds limits")
@@ -597,7 +639,10 @@ class MountComm:
     # NEVER HALT THE MOUNT, THE BREAKS ARE GONE IT WILL JUST FALL OVER!
     def stop_motion(self):
         """
-        Stops both axes immediately and resets commanded velocity to 0.
+        Stops all motion on both axes.
+
+        This sends a stop command to each axis and then sets the commanded
+        velocity to zero as a safety measure.
         """
         self.logger.debug("Stopping mount move!")
 
@@ -628,14 +673,15 @@ class MountComm:
 
     def set_track_at_rates(self, ra_rate: float, dec_rate: float):
         """
-        Sets the mount to track at specific rates.
+        Sets the mount to track at specified rates.
 
-        Wraps `move_to` by automatically setting the target to the
-        physical limits (horizon) based on the direction of travel.
+        This is a convenience wrapper around `move_to` that sets the target
+        position to the physical limits of the mount, effectively causing it
+        to move at a constant rate until it is stopped or hits a limit.
 
         Args:
-            ra_rate: Rate in counts/sec (Positive = East).
-            dec_rate: Rate in counts/sec (Positive = North).
+            ra_rate: The tracking rate for the RA axis in counts/sec.
+            dec_rate: The tracking rate for the Dec axis in counts/sec.
         """
         self.logger.debug(f"Engaging Track Rates: RA={ra_rate:.1f}, Dec={dec_rate:.1f}")
 

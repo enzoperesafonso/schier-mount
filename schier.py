@@ -38,7 +38,6 @@ class SchierMount():
 
     async def initialize(self):
 
-
         self._poll_task = asyncio.create_task(self._status_loop())
 
         # Wait for first status to populate
