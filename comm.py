@@ -522,9 +522,6 @@ class MountComm:
                 pass
             raise e
 
-    def send_park(self):
-        pass
-
     def move_to(self, ra_pos: int, dec_pos: int, speed_ra: float, speed_dec: float):
         """
         Commands the mount to move to a specific encoder position.

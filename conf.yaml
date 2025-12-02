@@ -20,7 +20,7 @@ stow_position: # stowage/park position in mount coordinates in deg
   ra: -95.0
   dec: 35.0
 
-degrees_to_encoder_steps: # original values
+steps_per_degree: # original values
   ra: 24382
   dec: 19395
 
