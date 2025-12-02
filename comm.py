@@ -397,7 +397,7 @@ class MountComm:
             return target_pos, actual_pos
 
         except (ValueError, IndexError) as e:
-            self.logger.error(f"Parsing Error on {cmd_key}: {e} | Raw: {response}")
+            self.logger.error(f"Parsing Error on {cmd_key}: {e} | Raw: {response}") # Rykoff got to say "Shite" in his error logging, please can I?
             raise MountConnectionError(f"Failed to parse position: {e}")
 
     def get_axis_status_bits(self, axis_index: int) -> dict:
