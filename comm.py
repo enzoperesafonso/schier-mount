@@ -49,10 +49,15 @@ class MountComm:
             'AMP_DISABLE': 0x0010
         }
 
-        # setup acceleration and kick on mount ...
+        # setup acceleration  ...
         self._send_command("AccelRa", 1000)
         self._send_command("AccelDec", 1000)
 
+        # setup max velocities
+        self._send_command("AccelRa", 1000)
+        self._send_command("AccelDec", 1000)
+
+        # and give the mount a kick ...
         self.recover_servo_state()
 
     def disconnect(self):

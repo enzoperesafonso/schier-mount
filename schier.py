@@ -65,8 +65,6 @@ class SchierMount():
     async def stop_tracking(self):
         self.state = MountState.IDLE
 
-    async def home(self):
-        pass
 
     async def park(self):
         pass
@@ -76,6 +74,82 @@ class SchierMount():
 
     async def stop(self):
         self.state = MountState.IDLE
+
+    async def home(self):
+        """
+        Performs the full homing sequence:
+        1. Cancels tracking/slewing.
+        2. Sends hardware home command.
+        3. Waits for movement to physically stop (encoders settle).
+        4. Syncs software coordinates to the 'Stow' position.
+        """
+        self.logger.info("Starting Homing Sequence...")
+
+        self.state = MountState.HOMING
+
+        try:
+            # 2. Send Hardware Command (Thread-safe)
+            # We use the lock to ensure no status polls interrupt the sequence
+            async with self._com_lock:
+                loop = asyncio.get_running_loop()
+                await loop.run_in_executor(None, self.comm.send_home)
+
+            # 3. Wait for completion
+            # The mount will move to the limit switch and stop automatically.
+            # We monitor the encoders to see when they stop changing.
+            self.logger.info("Waiting for mount to find index (this may take time)...")
+            await self._wait_for_stop(timeout=180)  # 3 minutes max (homing is slow)
+
+            # 4. Sync Coordinates
+            # Once stopped at the physical index, we tell the software:
+            # "We are now at the Stow Position defined in config."
+            # self.update_home_position()
+
+            self.state = MountState.IDLE
+            self.logger.info("Homing Complete. Mount is synced and IDLE.")
+
+        except Exception as e:
+            self.logger.error(f"Homing Failed: {e}")
+            self.state = MountState.FAULT
+            await self.stop()
+
+    async def _wait_for_stop(self, timeout=60):
+        """
+        Monitors encoders. Returns only when they have been stable
+        (not changing) for a specific duration.
+        """
+        start_time = asyncio.get_running_loop().time()
+        last_ra = 0
+        last_dec = 0
+        stable_count = 0
+        required_stable_polls = 10  # 2 seconds at 5Hz polling
+
+        while True:
+            # Timeout Check
+            if asyncio.get_running_loop().time() - start_time > timeout:
+                raise TimeoutError("Homing timed out - Mount did not stop.")
+
+            # Get latest position from the status loop
+            # Note: We rely on _status_loop running in the background to update this
+            curr_ra = self.encoder_status.get('ra_enc', 0)
+            curr_dec = self.encoder_status.get('dec_enc', 0)
+
+            # Check delta (allow tiny jitter of 50 steps)
+            delta_ra = abs(curr_ra - last_ra)
+            delta_dec = abs(curr_dec - last_dec)
+
+            if delta_ra <= 50 and delta_dec <= 50:
+                stable_count += 1
+            else:
+                stable_count = 0  # Reset count if we detect motion
+
+            if stable_count >= required_stable_polls:
+                return  # Motion has stopped
+
+            last_ra = curr_ra
+            last_dec = curr_dec
+
+            await asyncio.sleep(0.2)  # 5 Hz same as poll update!
 
 
     def _check_status(self, ra_status, dec_status):

@@ -3,10 +3,11 @@ import logging
 import sys
 
 # Import your modules
-from comm import MountComm, MountError
+from comm import MountComm
 from schier import SchierMount
+from configuration import MountConfig
 
-# Setup nice logging
+# Setup logging to console
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
@@ -14,68 +15,73 @@ logging.basicConfig(
 )
 
 
+async def monitor_homing(driver):
+    """
+    Background task to print status while homing is in progress.
+    """
+    print("\n--- MONITORING STATUS ---")
+    while driver.state == driver.state.HOMING:
+        stat = driver.status
+        enc_ra = stat.get('ra_enc', 'N/A')
+        enc_dec = stat.get('dec_enc', 'N/A')
+
+        # Overwrite the same line for a clean display
+        sys.stdout.write(f"\rHoming in progress... RA: {enc_ra} | Dec: {enc_dec}   ")
+        sys.stdout.flush()
+        await asyncio.sleep(0.5)
+    print("\n--- STATUS MONITOR END ---")
+
+
 async def main():
-    print("=== Schier Driver Status Loop Test ===")
+    print("=== SCHIER MOUNT HOMING TEST ===")
 
-    # 3. Initialize the Driver
-    driver = SchierMount()
 
-    # 4. Start the Driver Background Task
-    # We wrap it in a task so it runs concurrently with our print loop below
-    print("Starting Driver Loop...")
-    driver_task = asyncio.create_task(driver.initialize())
 
     try:
-        # 5. Monitor the Status
-        print("\nMonitoring Status (Press Ctrl+C to stop)...\n")
+        driver = SchierMount()
 
-        for i in range(1, 200):  # Run for 20 seconds
-            await asyncio.sleep(0.1)
+    except Exception as e:
+        print(f"Initialization Failed: {e}")
+        return
 
-            # Fetch the latest status dictionary from the driver
-            status = driver.encoder_status
+    # 2. Start Driver Loop
+    driver_task = asyncio.create_task(driver.initialize())
 
-            if not status:
-                print(f"[{i}s] Waiting for first poll...")
-                continue
+    # Wait for first status
+    print("Waiting for driver connection...")
+    while not driver.encoder_status:
+        await asyncio.sleep(0.1)
 
-            # Extract key data
-            enc_ra = status.get('ra_enc', 'N/A')
-            enc_dec = status.get('dec_enc', 'N/A')
-            faults = status.get('faults', [])
-            timestamp = status.get('timestamp', 0)
+    print(f"Initial State: {driver.state}")
 
-            # Print formatted output
-            status_line = (
-                f"[{i}s] T={timestamp:.2f} | "
-                f"EncRA: {enc_ra:>8} | "
-                f"EncDec: {enc_dec:>8} | "
-                f"Faults: {faults}"
-            )
+    # 3. Execute Homing
+    try:
+        print("\n>>> STARTING HOMING SEQUENCE <<<")
+        print("WARNING: Mount will move to limit switches!")
 
-            # Simple visual alert if faults exist
-            if faults:
-                print(f"!!! FAULT DETECTED: {status_line} !!!")
-            else:
-                print(status_line)
+        # Start the monitor to watch the numbers change
+        monitor_task = asyncio.create_task(monitor_homing(driver))
 
-    except KeyboardInterrupt:
-        print("\nTest interrupted by user.")
+        # Triggers: Stop -> Set Homing Vel -> Home Cmd -> Wait -> Sync
+        await driver.home()
+
+        await monitor_task
+
+        print("\n>>> HOMING COMPLETE <<<")
+        print(f"Final State: {driver.state}")
+
+
+
+    except Exception as e:
+        print(f"\n!!! HOMING FAILED: {e} !!!")
 
     finally:
-        # 6. Clean Shutdown
-        print("Shutting down...")
-
-        # Cancel the driver loop
+        print("\nShutting down...")
         driver_task.cancel()
-        try:
-            await driver_task
-        except asyncio.CancelledError:
-            pass
+        comm.disconnect()
 
 
 if __name__ == "__main__":
-    # Python 3.7+ entry point
     try:
         asyncio.run(main())
     except KeyboardInterrupt:
