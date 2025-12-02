@@ -122,7 +122,7 @@ class SchierMount():
         last_ra = 0
         last_dec = 0
         stable_count = 0
-        required_stable_polls = 10  # 2 seconds at 5Hz polling
+        required_stable_polls = 50  # 10 seconds at 5Hz polling
 
         while True:
             # Timeout Check

@@ -78,7 +78,6 @@ async def main():
     finally:
         print("\nShutting down...")
         driver_task.cancel()
-        comm.disconnect()
 
 
 if __name__ == "__main__":
