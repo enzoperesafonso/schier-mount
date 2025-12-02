@@ -88,7 +88,7 @@ class SchierMount():
         self.state = MountState.HOMING
 
         try:
-            # 2. Send Hardware Command (Thread-safe)
+            # 2. Send the mount off on an adventure (Thread-safe)
             # We use the lock to ensure no status polls interrupt the sequence
             async with self._com_lock:
                 loop = asyncio.get_running_loop()
@@ -97,12 +97,12 @@ class SchierMount():
             # 3. Wait for completion
             # The mount will move to the limit switch and stop automatically.
             # We monitor the encoders to see when they stop changing.
-            self.logger.info("Waiting for mount to find index (this may take time)...")
+            self.logger.info("Waiting for mount to find index (this may take time so grab some tea I guess)...")
             await self._wait_for_stop(timeout=180)  # 3 minutes max (homing is slow)
 
             # 4. Sync Coordinates
             # Once stopped at the physical index, we tell the software:
-            # "We are now at the Stow Position defined in config."
+            # "We are now at the position defined in config."
             # self.update_home_position()
 
             self.state = MountState.IDLE
