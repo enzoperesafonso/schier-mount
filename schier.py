@@ -37,13 +37,15 @@ class SchierMount():
         self._poll_task = None
 
     async def initialize(self):
-        self.logger.debug("Connected to Schier Mount!")
+
 
         self._poll_task = asyncio.create_task(self._status_loop())
 
         # Wait for first status to populate
         while self.encoder_status == {}:
             await asyncio.sleep(0.1)
+
+        self.logger.info("Connected to Schier Mount!")
 
     async def disconnect(self):
         pass
