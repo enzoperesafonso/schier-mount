@@ -183,17 +183,15 @@ class SchierMount():
         """
         while True:
             try:
-                # 1. Fetch Data (Run in thread to avoid blocking async loop)
-                loop = asyncio.get_running_loop()
+                # --- Acquire Lock for Serial I/O ---
+                async with self._com_lock:
+                    loop = asyncio.get_running_loop()
 
-                # Fetch Status bits (Status2RA/Dec)
-                ra_stat = await loop.run_in_executor(None, self.comm.get_axis_status_bits, 0)
-                dec_stat = await loop.run_in_executor(None, self.comm.get_axis_status_bits, 1)
-
-                # Fetch Positions (Status1RA/Dec)
-                ra_enc, ra_act = await loop.run_in_executor(None, self.comm.get_encoder_position, 0)
-                dec_enc, dec_act = await loop.run_in_executor(None, self.comm.get_encoder_position, 1)
-
+                    # Run all comms in one block to keep data consistent
+                    ra_stat = await loop.run_in_executor(None, self.comm.get_axis_status_bits, 0)
+                    dec_stat = await loop.run_in_executor(None, self.comm.get_axis_status_bits, 1)
+                    ra_enc, ra_act = await loop.run_in_executor(None, self.comm.get_encoder_position, 0)
+                    dec_enc, dec_act = await loop.run_in_executor(None, self.comm.get_encoder_position, 1)
                 # 2. Safety Check
                 faults = self._check_status(ra_stat, dec_stat)
 
