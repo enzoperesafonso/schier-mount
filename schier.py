@@ -194,7 +194,7 @@ class SchierMount():
                 # 2. Safety Check
                 faults = self._check_status(ra_stat, dec_stat)
 
-                if faults and self.state != MountState.RECOVERING:
+                if faults and self.state != MountState.RECOVERING: # if we end up here we are cooked
                     self.logger.error(f"SAFETY FAULT DETECTED: {faults}")
                     self.state = MountState.FAULT
                    # await self._emergency_stop()
