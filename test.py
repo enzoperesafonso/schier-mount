@@ -29,8 +29,8 @@ async def main():
         # 5. Monitor the Status
         print("\nMonitoring Status (Press Ctrl+C to stop)...\n")
 
-        for i in range(1, 21):  # Run for 20 seconds
-            await asyncio.sleep(1.0)
+        for i in range(1, 200):  # Run for 20 seconds
+            await asyncio.sleep(0.1)
 
             # Fetch the latest status dictionary from the driver
             status = driver.encoder_status
