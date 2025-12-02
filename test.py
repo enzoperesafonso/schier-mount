@@ -21,7 +21,7 @@ async def monitor_homing(driver):
     """
     print("\n--- MONITORING STATUS ---")
     while driver.state == driver.state.HOMING:
-        stat = driver.status
+        stat = driver.encoder_status
         enc_ra = stat.get('ra_enc', 'N/A')
         enc_dec = stat.get('dec_enc', 'N/A')
 
