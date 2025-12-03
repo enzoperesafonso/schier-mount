@@ -53,9 +53,6 @@ class SchierMount():
     async def disconnect(self):
         pass
 
-    async def _goto_enc(self, ra, dec):
-
-
     async def set_offset_ra_dec(self):
         pass
 
