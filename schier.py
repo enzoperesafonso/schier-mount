@@ -70,7 +70,17 @@ class SchierMount():
 
 
     async def park(self):
-        pass
+        self.state = MountState.PARKING
+
+        ra_enc = ( self.config.park['ra'] * self.config.encoder['steps_per_deg_ra'] ) + self.config.encoder['zeropt_ra']
+        dec_enc = ( self.config.park['dec'] * self.config.encoder['steps_per_deg_dec'] ) + self.config.encoder['zeropt_dec']
+
+        ra_vel = self.config.speeds['home_ra'] * self.config.encoder['steps_per_deg_ra']
+        dec_vel = self.config.speeds['home_dec'] * self.config.encoder['steps_per_deg_dec']
+
+
+        print(f'ra_enc: {ra_enc}, dec_enc: {dec_enc}')
+        self.state = MountState.PARKING
 
     async def unpark(self):
         self.state = MountState.IDLE
@@ -213,8 +223,6 @@ class SchierMount():
                     'dec_enc': dec_act,
                     'faults': faults,
                 }
-
-                print(faults)
 
             except Exception as e:
                 self.logger.error(f"Status Loop Error: {e}")
