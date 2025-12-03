@@ -214,6 +214,8 @@ class SchierMount():
                     'faults': faults,
                 }
 
+                print(faults)
+
             except Exception as e:
                 self.logger.error(f"Status Loop Error: {e}")
 
