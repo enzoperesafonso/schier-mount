@@ -53,8 +53,8 @@ class SchierMount():
     async def disconnect(self):
         pass
 
-    async def slew_to_ha_dec(self):
-        pass
+    async def _goto_enc(self, ra, dec):
+
 
     async def set_offset_ra_dec(self):
         pass
@@ -81,6 +81,8 @@ class SchierMount():
 
         print(f'ra_enc: {ra_enc}, dec_enc: {dec_enc}')
         self.state = MountState.PARKING
+
+        self.comm.move_to(ra_enc, dec_enc, 24382 * 2, 24382 * 2)
 
     async def unpark(self):
         self.state = MountState.IDLE
