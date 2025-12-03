@@ -3,7 +3,6 @@ import time
 import serial
 import crc
 
-
 # --- Custom Exceptions for Clarity ---
 class MountError(Exception):
     """Base class for exceptions in this module."""
@@ -43,7 +42,7 @@ class MountComm:
         port (str): The serial port to connect to (e.g., "/dev/ttyS0").
         baudrate (int): The baud rate for the serial communication.
     """
-    def __init__(self, port: str = "/dev/ttyS0", baudrate=9600):
+    def __init__(self, port: str = "/dev/ttyS0", baudrate=9600, ):
         """Initializes the MountComm object and opens the serial port."""
         self.logger = logging.getLogger("SchierMount")
         self.serial = serial.Serial(port, baudrate, timeout=1.0)
@@ -53,7 +52,7 @@ class MountComm:
         self.SLEW_SPEED_DEC = 15000
 
         self.HOME_SPEED_RA = 24382 * 2
-        self.HOME_SPEED_DEC = 24382 * 2
+        self.HOME_SPEED_DEC = 19395 * 2 # seems to be very important!
 
         self.BIT_MASKS = {
             'ESTOP': 0x0001,
@@ -64,12 +63,12 @@ class MountComm:
         }
 
         # setup acceleration  ...
-        self._send_command("AccelRa", 1000)
-        self._send_command("AccelDec", 1000)
+        self._send_command("AccelRa", 24382 * 25)
+        self._send_command("AccelDec", 19395 * 25)
 
         # setup max velocities
-        self._send_command("AccelRa", 1000)
-        self._send_command("AccelDec", 1000)
+        self._send_command("MaxVelRA", 24382 * 35)
+        self._send_command("MaxVelRA", 19395 * 35)
 
         # and give the mount a kick ...
         self.recover_servo_state()
