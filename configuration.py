@@ -15,8 +15,13 @@ class MountConfig:
         self.logger = logging.getLogger("MountConfig")
         self.config_file = None
 
-        # --- 1. HARDCODED DEFAULTS ---
-        self.location = {'latitude': -33.9, 'longitude': 18.4, 'elevation': 100}
+        # --- HARDCODED DEFAULTS ---
+
+        # Configuration file for custom Schier Mount of ROTSE-IIIc. These values are taken directly from the legacy Schierd config of the
+        # original rotsed ocs system (Don Smith & E. Rykoff 2005) and should NOT be changed!
+
+        # HESS Site
+        self.location = {'latitude': -23.2716, 'longitude': 16.5, 'elevation': 1800}
 
         self.encoder = {
             'steps_per_deg_ra': 24382.0,
@@ -33,16 +38,11 @@ class MountConfig:
 
         self.speeds = {
             'slew_ra': 25.0, 'slew_dec': 25.0,
+            'fine_ra': 1.0, 'fine_dec': 1.0,
             'home_ra': 2.0, 'home_dec': 2.0
         }
 
         self.park = {'ra': -95.0, 'dec': 35.0}
-
-        # T-Point Model (Empty by default)
-        self.pointing_model = {
-            'IH': 0.0, 'ID': 0.0, 'NP': 0.0,
-            'CH': 0.0, 'ME': 0.0, 'MA': 0.0, 'FO': 0.0
-        }
 
         # --- 2. LOAD CONFIGURATION ---
         if isinstance(config_source, dict):
@@ -113,8 +113,6 @@ class MountConfig:
                 self.encoder['zeropt_ra'] = zp.get('ra', self.encoder['zeropt_ra'])
                 self.encoder['zeropt_dec'] = zp.get('dec', self.encoder['zeropt_dec'])
 
-            if 'pointing_model' in data:
-                self.pointing_model.update(data['pointing_model'])
 
         except Exception as e:
             self.logger.error(f"Config parsing error: {e}")
