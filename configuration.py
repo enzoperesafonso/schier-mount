@@ -46,7 +46,7 @@ class MountConfig:
 
         # --- 2. LOAD CONFIGURATION ---
         if isinstance(config_source, dict):
-            self.logger.info("Configuration loaded from Dictionary.")
+            self.logger.debug("Configuration loaded from Dictionary.")
             self._apply_dict(config_source)
 
         elif isinstance(config_source, str):
@@ -54,7 +54,7 @@ class MountConfig:
             self.load_from_file()
 
         else:
-            self.logger.info("No config source provided. Using Hardcoded Defaults.")
+            self.logger.debug("No config source provided. Using Hardcoded Defaults.")
 
     def _apply_dict(self, data):
         """Merges a dictionary into the existing config."""
@@ -134,4 +134,4 @@ class MountConfig:
         """Updates zero points in memory (runtime)."""
         self.encoder['zeropt_ra'] = int(ra_counts)
         self.encoder['zeropt_dec'] = int(dec_counts)
-        self.logger.info(f"Runtime Config Update: Zero Points set to RA={ra_counts}, Dec={dec_counts}")
+        self.logger.debug(f"Runtime Config Update: Zero Points set to RA={ra_counts}, Dec={dec_counts}")

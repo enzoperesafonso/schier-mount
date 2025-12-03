@@ -105,13 +105,13 @@ class SchierMount():
 
             # 4. Sync Coordinates
             # Once stopped at the physical index, we tell the software:
-            # "We are now at the position defined in config."
-            # self.update_home_position()
+            # We are now at the home position so update zero points and let telescope idle
 
-            self.config.encoder['zeropt_ra'] = self.encoder_status['ra_enc']
-            self.config.encoder['zeropt_dec'] = self.encoder_status['dec_enc']
+            self.config.update_zero_points(self.encoder_status['ra_enc'], self.encoder_status['dec_enc'])
+
             self.state = MountState.IDLE
-            self.logger.info(f'Homing Complete. Mount is synced ra: {self.config.encoder['zeropt_ra']} dec: {self.config.encoder['zeropt_ra']} and IDLE.')
+
+            self.logger.debug(f'Homing Complete. Mount is synced ra: {self.config.encoder['zeropt_ra']} dec: {self.config.encoder['zeropt_ra']} and IDLE.')
 
         except Exception as e:
             self.logger.error(f"Homing Failed: {e}")
