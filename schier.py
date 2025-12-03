@@ -4,6 +4,7 @@ from enum import Enum, auto
 
 
 from comm import MountComm
+from configuration import MountConfig
 
 
 class MountState(Enum):
@@ -31,6 +32,9 @@ class SchierMount():
         self.encoder_status = {}
 
         self.logger = logging.getLogger("SchierMount")
+
+        # Start the config file
+        self.config = MountConfig()
 
         # Very Snazzy and Cool Async Task Stuff
         self._com_lock = asyncio.Lock()
@@ -104,8 +108,10 @@ class SchierMount():
             # "We are now at the position defined in config."
             # self.update_home_position()
 
+            self.config.encoder['zeropt_ra'] = self.encoder_status['ra_enc']
+            self.config.encoder['zeropt_dec'] = self.encoder_status['dec_enc']
             self.state = MountState.IDLE
-            self.logger.info("Homing Complete. Mount is synced and IDLE.")
+            self.logger.info(f'Homing Complete. Mount is synced ra: {self.config.encoder['zeropt_ra']} dec: {self.config.encoder['zeropt_ra']} and IDLE.')
 
         except Exception as e:
             self.logger.error(f"Homing Failed: {e}")
@@ -149,7 +155,6 @@ class SchierMount():
             last_dec = curr_dec
 
             await asyncio.sleep(0.2)  # 5 Hz same as poll update!
-
 
     def _check_status(self, ra_status, dec_status):
         """
