@@ -72,15 +72,15 @@ class SchierMount():
         ra_enc = ( self.config.park['ra'] * self.config.encoder['steps_per_deg_ra'] ) + self.config.encoder['zeropt_ra']
         dec_enc = ( self.config.park['dec'] * self.config.encoder['steps_per_deg_dec'] ) + self.config.encoder['zeropt_dec']
 
-        ra_vel = self.config.speeds['home_ra'] * self.config.encoder['steps_per_deg_ra']
-        dec_vel = self.config.speeds['home_dec'] * self.config.encoder['steps_per_deg_dec']
+        ra_vel = self.config.speeds['slew_ra'] * self.config.encoder['steps_per_deg_ra']
+        dec_vel = self.config.speeds['slew_dec'] * self.config.encoder['steps_per_deg_dec']
 
 
         print(f'ra_enc: {ra_enc}, dec_enc: {dec_enc}')
 
         async with self._com_lock:
             loop = asyncio.get_running_loop()
-            await loop.run_in_executor(None, self.comm.move_to(ra_enc, dec_enc, 24382 * 25, 24382 * 25))
+            await loop.run_in_executor(None, self.comm.move_to(ra_enc, dec_enc,ra_vel , dec_vel))
         self.state = MountState.PARKING
 
 

@@ -577,8 +577,8 @@ class MountComm:
             speed_dec: The speed for the Dec axis in counts/sec.
         """
 
-        vel_ra = int(speed_ra if speed_ra is not None else self.SLEW_SPEED_RA)
-        vel_dec = int(speed_dec if speed_dec is not None else self.SLEW_SPEED_DEC)
+        vel_ra = int(speed_ra if speed_ra is not None else self.HOME_SPEED_RA )
+        vel_dec = int(speed_dec if speed_dec is not None else self.HOME_SPEED_DEC)
 
         self.logger.debug(f"Slewing to ({ra_pos}, {dec_pos}) at vel ({vel_ra}, {vel_dec})")
 
