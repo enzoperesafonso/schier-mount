@@ -47,7 +47,7 @@ class MountConfig:
             'slew_ra': 25.0, 'slew_dec': 25.0,
         }
 
-        self.park = {'ra': -92.5, 'dec': 120.0}
+        self.park = {'ra': -95.0, 'dec': 174.0}
 
         # --- 2. LOAD CONFIGURATION ---
         if isinstance(config_source, dict):
