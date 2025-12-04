@@ -49,6 +49,8 @@ class MountConfig:
 
         self.park = {'ra': -95.0, 'dec': 174.0}
 
+        self.standby = {'ra': -95.0, 'dec': 174.0}
+
         # --- 2. LOAD CONFIGURATION ---
         if isinstance(config_source, dict):
             self.logger.debug("Configuration loaded from Dictionary.")
