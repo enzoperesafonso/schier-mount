@@ -54,7 +54,7 @@ class MountComm:
         self.SLEW_SPEED_DEC = 15000
 
         self.HOME_SPEED_RA = 24382 * 1.0
-        self.HOME_SPEED_DEC = 19395 * 1.0  # seems to be very important!
+        self.HOME_SPEED_DEC = 19395 * 2.0  # seems to be very important!
 
         self.BIT_MASKS = {
             'ESTOP': 0x0001,
