@@ -3,6 +3,7 @@ import time
 import serial
 import crc
 
+
 # --- Custom Exceptions for Clarity ---
 class MountError(Exception):
     """Base class for exceptions in this module."""
@@ -42,6 +43,7 @@ class MountComm:
         port (str): The serial port to connect to (e.g., "/dev/ttyS0").
         baudrate (int): The baud rate for the serial communication.
     """
+
     def __init__(self, port: str = "/dev/ttyS0", baudrate=9600, ):
         """Initializes the MountComm object and opens the serial port."""
         self.logger = logging.getLogger("SchierMount")
@@ -52,7 +54,7 @@ class MountComm:
         self.SLEW_SPEED_DEC = 15000
 
         self.HOME_SPEED_RA = 24382 * 2
-        self.HOME_SPEED_DEC = 19395 * 2 # seems to be very important!
+        self.HOME_SPEED_DEC = 19395 * 2  # seems to be very important!
 
         self.BIT_MASKS = {
             'ESTOP': 0x0001,
@@ -62,11 +64,18 @@ class MountComm:
             'AMP_DISABLE': 0x0010
         }
 
-        # setup acceleration  ...
+        self.SIDEREAL_RATE = 1
+
+
+        # ensure the mount doesn't drift while it configures acceleration limits.
+        self._send_command("VelRa", 0)
+        self._send_command("VelDec", 0)
+
+        # setup acceleration and max velocity using the defaults from original rotsed
+
         self._send_command("AccelRa", 24382 * 25)
         self._send_command("AccelDec", 19395 * 25)
 
-        # setup max velocities
         self._send_command("MaxVelRA", 24382 * 35)
         self._send_command("MaxVelRA", 19395 * 35)
 
@@ -102,6 +111,7 @@ class MountComm:
         self.logger.warning("Attempting Servo Recovery (i.e. giving the mount a kick!)...")
 
         try:
+
             # The "Kick" !
             # The C code sends Halt, then Stop.
             # Halt kills the trajectory generator. Stop enables the Amps.
@@ -142,35 +152,16 @@ class MountComm:
 
         self.logger.debug(f"Stopping Axis {axis_index}...")
 
-        # 2. Send the Stop Command
+        # Send the Stop Command
         # The mount should reply (e.g. "$StopRA<CRC>") confirming receipt.
         try:
             self._send_command(cmd_key)
+            ''
+            self.logger.debug(f"Axis {axis_index} Stopped Successfully.")
+
         except MountConnectionError as e:
             # If the stop command fails to send, we are in trouble.
-            self.logger.critical(f"FAILED TO SEND STOP COMMAND TO AXIS {axis_index}: {e}")
-            raise
-
-        # The C code immediately checks 'get2stat' to ensure we aren't in a fault state.
-        # It considers E-Stop, Amp Disable, or Brake On to be *errors* during a routine stop.
-
-        status = self.get_axis_status_bits(axis_index)
-
-        error_msg = []
-        if status['estop']:
-            error_msg.append("E-STOP Active")
-        if status['amp_disabled']:
-            error_msg.append("Amplifier Disabled")
-        if status['brake_on']:
-            error_msg.append("Brake Engaged")
-
-        if error_msg:
-            fault_str = ", ".join(error_msg)
-            self.logger.error(f"Stop failed on Axis {axis_index}: {fault_str}")
-            # Raise a safety error so the main program knows the mount is not just stopped, but 'dead'
-            raise MountSafetyError(f"Axis {axis_index} Faulted: {fault_str}")
-
-        self.logger.debug(f"Axis {axis_index} Stopped Successfully.")
+            raise MountSafetyError(f"FAILED TO SEND STOP COMMAND TO AXIS {axis_index}: {e}")
 
     def _clear_comm(self):
         """
@@ -396,7 +387,8 @@ class MountComm:
             return target_pos, actual_pos
 
         except (ValueError, IndexError) as e:
-            self.logger.error(f"Parsing Error on {cmd_key}: {e} | Raw: {response}") # Rykoff got to say "Shite" in his error logging, please can I?
+            self.logger.error(
+                f"Parsing Error on {cmd_key}: {e} | Raw: {response}")  # Rykoff got to say "Shite" in his error logging, please can I?
             raise MountConnectionError(f"Failed to parse position: {e}")
 
     def get_axis_status_bits(self, axis_index: int) -> dict:
@@ -537,6 +529,7 @@ class MountComm:
             # The mount needs to know how fast to spin while looking for the sensor.
             # We set this BEFORE the Home command.
             self.stop_motion()
+
             self._send_command("VelRa", self.HOME_SPEED_RA)
             self._send_command("VelDec", self.HOME_SPEED_DEC)
 
@@ -584,20 +577,6 @@ class MountComm:
             speed_dec: The speed for the Dec axis in counts/sec.
         """
 
-        # --- 1. Safety Checks (Bounds) ---
-        # Import limits from your rotse_defs.py
-        # You should define these based on your specific hardware limits
-        # if not (self.RA_MIN <= ra_pos <= self.RA_MAX):
-        #     self.logger.error(f"Slew Rejected: RA {ra_pos} out of bounds.")
-        #     raise MountInputError(f"RA Target {ra_pos} exceeds limits")
-        # 
-        # if not (self.DEC_MIN <= dec_pos <= self.DEC_MAX):
-        #     self.logger.error(f"Slew Rejected: Dec {dec_pos} out of bounds.")
-        #     raise MountInputError(f"Dec Target {dec_pos} exceeds limits")
-
-        # --- 2. Determine Speed ---
-        # If no speed provided, use max slew speed (defined in constants)
-        # Ensure we cast to int, as the mount expects integer strings usually
         vel_ra = int(speed_ra if speed_ra is not None else self.SLEW_SPEED_RA)
         vel_dec = int(speed_dec if speed_dec is not None else self.SLEW_SPEED_DEC)
 
@@ -643,7 +622,7 @@ class MountComm:
         This sends a stop command to each axis and then sets the commanded
         velocity to zero as a safety measure.
         """
-        self.logger.debug("Stopping mount move!")
+        self.logger.debug("Stopping mount!")
 
         # 1. Send Stop Commands (Highest Priority)
         # We try both even if the first fails
@@ -658,64 +637,20 @@ class MountComm:
             self.logger.error(f"Failed to stop Dec: {e}")
 
         # Zero the Velocity Registers
-        # This ensures that if the 'Stop' latch is released, 
+        # This ensures that if the 'Stop' latch is released,
         # the mount doesn't try to resume the previous speed.
         try:
             self._send_command("VelRa", 0)
             self._send_command("VelDec", 0)
         except Exception:
-            pass  # If comms are bad, we did our best with stop_axis above.
+            pass  # If comms are bad, we did our best
+
 
         # 3. Wait for Settle
         # Important so that subsequent commands don't crash the controller
         time.sleep(0.5)
 
-    def set_track_at_rates(self, ra_rate: float, dec_rate: float):
-        """
-        Sets the mount to track at specified rates.
 
-        This is a convenience wrapper around `move_to` that sets the target
-        position to the physical limits of the mount, effectively causing it
-        to move at a constant rate until it is stopped or hits a limit.
+    def track_sidereal(self):
+        pass
 
-        Args:
-            ra_rate: The tracking rate for the RA axis in counts/sec.
-            dec_rate: The tracking rate for the Dec axis in counts/sec.
-        """
-        self.logger.debug(f"Engaging Track Rates: RA={ra_rate:.1f}, Dec={dec_rate:.1f}")
-
-        # 1. Determine RA Target (The "Horizon" Hack)
-        if ra_rate > 0:
-            target_ra = self.RA_MAX
-        elif ra_rate < 0:
-            target_ra = self.RA_MIN
-        else:
-            # Rate is 0. Hold current position.
-            _, current_ra = self.get_encoder_position(0)
-            target_ra = current_ra
-
-        # 2. Determine Dec Target
-        if dec_rate > 0:
-            target_dec = self.DEC_MAX
-        elif dec_rate < 0:
-            target_dec = self.DEC_MIN
-        else:
-            _, current_dec = self.get_encoder_position(1)
-            target_dec = current_dec
-
-        # 3. Delegate to the main move function
-        # We take the absolute value of rate because move_to expects a
-        # speed magnitude, not a velocity vector.
-        try:
-            self.move_to(
-                ra_pos=target_ra,
-                dec_pos=target_dec,
-                speed_ra=int(abs(ra_rate)),
-                speed_dec=int(abs(dec_rate))
-            )
-        except MountInputError:
-            # This handles the edge case where RA_MAX might be slightly
-            # outside the strict bounds check in move_to
-            self.logger.error("Could not initiate tracking.")
-            self.stop_motion()
-            raise
