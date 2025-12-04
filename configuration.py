@@ -28,7 +28,7 @@ class MountConfig:
             'steps_per_deg_dec': 19395.0,
             'zeropt_ra': 0,
             'zeropt_dec': 0,
-            'tolerance': 100
+            'tolerance': 50
         }
 
         self.limits = {
