@@ -80,7 +80,7 @@ class SchierMount():
 
         async with self._com_lock:
             loop = asyncio.get_running_loop()
-            await loop.run_in_executor(None, self.comm.move_to(ra_enc, dec_enc, 24382 * 20, 24382 * 20))
+            await loop.run_in_executor(None, self.comm.move_to(ra_enc, dec_enc, 24382 * 25, 24382 * 25))
         self.state = MountState.PARKING
 
 
