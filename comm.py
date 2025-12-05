@@ -548,7 +548,7 @@ class MountComm:
             # 4. Trigger Homing
             # These commands put the controller into "Homing Mode".
             # It will move until it hits the index mark, then stop and reset its internal counter to 0.
-           # self._send_command("HomeRA")
+            self._send_command("HomeRA")
             self._send_command("HomeDec")
 
             self.logger.debug("Homing Triggered!")
