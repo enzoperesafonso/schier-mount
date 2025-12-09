@@ -21,8 +21,7 @@ async def status_monitor(driver, log_file):
     Continuously polls and logs all available mount status.
     """
     logger.info(f"Starting continuous status logging to console and '{LOG_FILENAME}'...")
-    log_file.write("--- Status Log Start ---
-")
+    log_file.write("--- Status Log Start ---\n")
     log_file.flush()
 
     while True:
