@@ -46,7 +46,7 @@ async def status_monitor(driver):
             sys.stdout.write(status_string)
             sys.stdout.flush()
 
-            await asyncio.sleep(1)
+            await asyncio.sleep(0.05)
 
         except Exception as e:
             error_message = f"Error in status monitor: {e}\n"
