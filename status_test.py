@@ -81,6 +81,10 @@ async def main():
 
         print("\n>>> STARTING HOMING SEQUENCE (status will be logged during homing) <<<")
         await driver.home()
+
+        await driver.park()
+
+        await driver.unpark()
         print(">>> HOMING COMPLETE <<<")
 
         # Wait indefinitely until the program is interrupted
