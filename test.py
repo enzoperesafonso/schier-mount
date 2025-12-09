@@ -69,7 +69,13 @@ async def main():
 
         await driver.park()
 
+        await monitor_task
+
         await driver.unpark()
+
+        await monitor_task
+
+
 
         print("\n>>> HOMING COMPLETE <<<")
         print(f"Final State: {driver.state}")
