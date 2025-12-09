@@ -31,6 +31,7 @@ async def status_monitor(driver):
                 dec_stat = await loop.run_in_executor(None, driver.comm.get_axis_status_bits, 1)
                 ra_cmd, ra_act = await loop.run_in_executor(None, driver.comm.get_encoder_position, 0)
                 dec_cmd, dec_act = await loop.run_in_executor(None, driver.comm.get_encoder_position, 1)
+                last_fault = await loop.run_in_executor(None, driver.comm.get_last_fault)
 
             # Format the output
             timestamp = datetime.now().isoformat()
@@ -40,6 +41,7 @@ async def status_monitor(driver):
             status_string += f"  DEC Encoder: Actual={dec_act}, Command={dec_cmd}\n"
             status_string += f"  RA Status: {ra_stat}\n"
             status_string += f"  DEC Status: {dec_stat}\n"
+            status_string += f"  Last Fault: {last_fault}\n"
             status_string += "-" * 20 + "\n\n"
 
             # Print to console
@@ -52,6 +54,7 @@ async def status_monitor(driver):
             error_message = f"Error in status monitor: {e}\n"
             sys.stderr.write(error_message)
             await asyncio.sleep(5)  # Wait longer after an error
+
 
 
 async def main():
