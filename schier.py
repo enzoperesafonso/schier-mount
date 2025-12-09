@@ -69,8 +69,8 @@ class SchierMount():
     async def park(self):
         self.state = MountState.PARKING
 
-        ra_enc = ( self.config.park['ra'] * self.config.encoder['steps_per_deg_ra'] ) + self.config.encoder['zeropt_ra']
-        dec_enc = ( self.config.park['dec'] * self.config.encoder['steps_per_deg_dec'] ) + self.config.encoder['zeropt_dec']
+        ra_enc = ( self.config.standby['ra'] * self.config.encoder['steps_per_deg_ra'] ) + self.config.encoder['zeropt_ra']
+        dec_enc = ( self.config.standby['dec'] * self.config.encoder['steps_per_deg_dec'] ) + self.config.encoder['zeropt_dec']
 
         ra_vel = self.config.speeds['slew_ra'] * self.config.encoder['steps_per_deg_ra']
         dec_vel = self.config.speeds['slew_dec'] * self.config.encoder['steps_per_deg_dec']
