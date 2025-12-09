@@ -5,8 +5,6 @@ from datetime import datetime
 
 from schier import SchierMount
 
-LOG_FILENAME = "status_log.txt"
-
 # Setup logging
 logging.basicConfig(
     level=logging.INFO,
@@ -16,13 +14,11 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-async def status_monitor(driver, log_file):
+async def status_monitor(driver):
     """
-    Continuously polls and logs all available mount status.
+    Continuously polls and logs all available mount status to the console.
     """
-    logger.info(f"Starting continuous status logging to console and '{LOG_FILENAME}'...")
-    log_file.write("--- Status Log Start ---\n")
-    log_file.flush()
+    logger.info("Starting continuous status logging to console...")
 
     while True:
         try:
@@ -50,23 +46,16 @@ async def status_monitor(driver, log_file):
             sys.stdout.write(status_string)
             sys.stdout.flush()
 
-            # Write to file
-            log_file.write(status_string)
-            log_file.flush()
-
             await asyncio.sleep(1)
 
         except Exception as e:
             error_message = f"Error in status monitor: {e}\n"
             sys.stderr.write(error_message)
-            log_file.write(error_message)
-            log_file.flush()
             await asyncio.sleep(5)  # Wait longer after an error
 
 
 async def main():
     print("=== SCHIER MOUNT STATUS LOGGER ===")
-    log_file = None
     monitor_task = None
     driver_task = None
     driver = None
@@ -85,12 +74,11 @@ async def main():
             await asyncio.sleep(0.1)
         print(f"Initial State: {driver.state}")
 
-        print("\n>>> STARTING HOMING SEQUENCE <<<")
+        monitor_task = asyncio.create_task(status_monitor(driver))
+
+        print("\n>>> STARTING HOMING SEQUENCE (status will be logged during homing) <<<")
         await driver.home()
         print(">>> HOMING COMPLETE <<<")
-
-        log_file = open(LOG_FILENAME, "w")
-        monitor_task = asyncio.create_task(status_monitor(driver, log_file))
 
         # Wait indefinitely until the program is interrupted
         await asyncio.Event().wait()
@@ -106,10 +94,6 @@ async def main():
 
         # Give tasks a moment to cancel
         await asyncio.sleep(1)
-
-        if log_file:
-            log_file.close()
-            print(f"Log file '{LOG_FILENAME}' closed.")
 
 
 if __name__ == "__main__":
