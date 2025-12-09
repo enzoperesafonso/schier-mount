@@ -3,9 +3,7 @@ import logging
 import sys
 
 # Import your modules
-from comm import MountComm
-from schier import SchierMount
-from configuration import MountConfig
+from schier import SchierMount, MountState
 
 # Setup logging to console
 logging.basicConfig(
@@ -15,36 +13,33 @@ logging.basicConfig(
 )
 
 
-async def monitor_homing(driver):
+async def monitor_state(driver, state, message):
     """
-    Background task to print status while homing is in progress.
+    Background task to print status while a specific state is active.
     """
-    print("\n--- MONITORING STATUS ---")
-    while driver.state == driver.state.HOMING:
+    print(f"\n--- MONITORING {message.upper()} ---")
+    while driver.state == state:
         stat = driver.encoder_status
         enc_ra = stat.get('ra_enc', 'N/A')
         enc_dec = stat.get('dec_enc', 'N/A')
 
         # Overwrite the same line for a clean display
-        sys.stdout.write(f"\rHoming in progress... RA: {enc_ra} | Dec: {enc_dec}   ")
+        sys.stdout.write(f"\r{message} in progress... RA: {enc_ra} | Dec: {enc_dec}   ")
         sys.stdout.flush()
         await asyncio.sleep(0.5)
-    print("\n--- STATUS MONITOR END ---")
+    print(f"\n--- {message.upper()} MONITOR END ---")
 
 
 async def main():
-    print("=== SCHIER MOUNT HOMING TEST ===")
-
-
+    print("=== SCHIER MOUNT FULL CYCLE TEST ===")
 
     try:
         driver = SchierMount()
-
     except Exception as e:
         print(f"Initialization Failed: {e}")
         return
 
-    # 2. Start Driver Loop
+    # Start Driver Loop
     driver_task = asyncio.create_task(driver.initialize())
 
     # Wait for first status
@@ -54,36 +49,34 @@ async def main():
 
     print(f"Initial State: {driver.state}")
 
-    # 3. Execute Homing
     try:
+        # 1. Homing
         print("\n>>> STARTING HOMING SEQUENCE <<<")
         print("WARNING: Mount will move to limit switches!")
-
-        # Start the monitor to watch the numbers change
-        monitor_task = asyncio.create_task(monitor_homing(driver))
-
-        # Triggers: Stop -> Set Homing Vel -> Home Cmd -> Wait -> Sync
+        monitor_task = asyncio.create_task(monitor_state(driver, MountState.HOMING, "Homing"))
         await driver.home()
-
         await monitor_task
+        print(">>> HOMING COMPLETE <<<")
+        print(f"State after homing: {driver.state}")
 
+        # 2. Parking
+        print("\n>>> STARTING PARKING SEQUENCE <<<")
+        monitor_task = asyncio.create_task(monitor_state(driver, MountState.PARKING, "Parking"))
         await driver.park()
-
         await monitor_task
+        print(">>> PARKING COMPLETE <<<")
+        print(f"State after parking: {driver.state}")
 
+        # 3. Unparking
+        print("\n>>> STARTING UNPARKING SEQUENCE <<<")
+        monitor_task = asyncio.create_task(monitor_state(driver, MountState.PARKED, "Unparking"))
         await driver.unpark()
-
         await monitor_task
-
-
-
-        print("\n>>> HOMING COMPLETE <<<")
+        print(">>> UNPARKING COMPLETE <<<")
         print(f"Final State: {driver.state}")
 
-
-
     except Exception as e:
-        print(f"\n!!! HOMING FAILED: {e} !!!")
+        print(f"\n!!! TEST FAILED: {e} !!!")
 
     finally:
         print("\nShutting down...")
