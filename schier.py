@@ -80,10 +80,12 @@ class SchierMount():
 
         async with self._com_lock:
             loop = asyncio.get_running_loop()
+            print("sent park")
             await loop.run_in_executor(None, self.comm.move_to(ra_enc, dec_enc,ra_vel , dec_vel))
-        self.state = MountState.PARKING
 
+        print("going to wait")
         await self._wait_for_stop(timeout=180)  # 3 minutes max (homing is slow)
+        print("finished")
         self.state = MountState.PARKED
 
 
@@ -101,6 +103,7 @@ class SchierMount():
 
         async with self._com_lock:
             loop = asyncio.get_running_loop()
+            print("runnonh")
             await loop.run_in_executor(None, self.comm.move_to(ra_enc, dec_enc, ra_vel, dec_vel))
 
         await self._wait_for_stop(timeout=180)
