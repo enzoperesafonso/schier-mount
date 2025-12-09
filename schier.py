@@ -83,10 +83,30 @@ class SchierMount():
             await loop.run_in_executor(None, self.comm.move_to(ra_enc, dec_enc,ra_vel , dec_vel))
         self.state = MountState.PARKING
 
+        await self._wait_for_stop(timeout=180)  # 3 minutes max (homing is slow)
+        self.state = MountState.PARKED
 
 
     async def unpark(self):
+        self.state = MountState.PARKED
+
+        ra_enc = (self.config.standby['ra'] * self.config.encoder['steps_per_deg_ra']) + self.config.encoder['zeropt_ra']
+        dec_enc = (self.config.standby['dec'] * self.config.encoder['steps_per_deg_dec']) + self.config.encoder[
+            'zeropt_dec']
+
+        ra_vel = self.config.speeds['slew_ra'] * self.config.encoder['steps_per_deg_ra']
+        dec_vel = self.config.speeds['slew_dec'] * self.config.encoder['steps_per_deg_dec']
+
+        print(f'ra_enc: {ra_enc}, dec_enc: {dec_enc}')
+
+        async with self._com_lock:
+            loop = asyncio.get_running_loop()
+            await loop.run_in_executor(None, self.comm.move_to(ra_enc, dec_enc, ra_vel, dec_vel))
+
+        await self._wait_for_stop(timeout=180)
+
         self.state = MountState.IDLE
+
 
     async def stop(self):
         self.state = MountState.IDLE
