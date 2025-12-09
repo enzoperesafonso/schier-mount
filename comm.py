@@ -77,7 +77,7 @@ class MountComm:
         self._send_command("AccelDec", 19395 * 25)
 
         self._send_command("MaxVelRA", 24382 * 35)
-        self._send_command("MaxVelDec", 19395 * 50)
+        self._send_command("MaxVelDec", 19395 * 35)
 
         # and give the mount a kick ...
         self.recover_servo_state()
