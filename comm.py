@@ -77,7 +77,7 @@ class MountComm:
         self._send_command("AccelDec", 19395 * 25)
 
         self._send_command("MaxVelRA", 24382 * 35)
-        self._send_command("MaxVelDec", 19395 * 1000) # fuck it we ball
+        self._send_command("MaxVelDec", 19395 * 35) # fuck it we ball
 
         # and give the mount a kick ...
         self.recover_servo_state()
@@ -129,6 +129,48 @@ class MountComm:
 
         except Exception as e:
             self.logger.error(f"Recovery failed: {e}")
+
+
+    # TODO: add low level comm methods like smith & rykoffs original c code !!
+
+    def query_mount(self):
+        pass
+
+
+    def calibrate_mount(selfs):
+        pass
+
+    def run_mount(self):
+        pass
+
+    def standby_mount(selfs):
+        pass
+
+    def park_mount(self):
+        pass
+
+    def shift_mount(self):
+        pass
+
+    def zero_mount(selfs):
+        pass
+
+    def slew_mount(self):
+        pass
+
+    def track_mount(self):
+        pass
+
+    def idle_mount(self):
+       """
+        Places the mount in an idle state.
+
+        This method is intended to stop any active tracking or slewing
+        by setting velocities to zero, while maintaining the servo
+        loop and amplifier state.
+        """
+    pass
+
 
     def _stop_axis(self, axis_index: int):
         """
@@ -653,4 +695,3 @@ class MountComm:
 
     def track_sidereal(self):
         pass
-
