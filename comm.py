@@ -107,9 +107,8 @@ class MountComm:
             self._send_command("AccelRa", accel_ra)
             self._send_command("AccelDec", accel_dec)
 
-            # Use slew speed as max velocity since that's how it's mapped in configuration.py
-            max_ra = int(self.config.speeds['slew_ra'] * self.config.encoder['steps_per_deg_ra'])
-            max_dec = int(self.config.speeds['slew_dec'] * self.config.encoder['steps_per_deg_dec'])
+            max_ra = int(self.config.speeds['max_ra'] * self.config.encoder['steps_per_deg_ra'])
+            max_dec = int(self.config.speeds['max_dec'] * self.config.encoder['steps_per_deg_dec'])
 
             self._send_command("MaxVelRA", max_ra)
             self._send_command("MaxVelDec", max_dec)
@@ -145,9 +144,12 @@ class MountComm:
         try:
 
             # mount has to be in STOP else it will freeze serial!
-            # TODO: verify status bits before sending home!
             self._send_command("StopRA")
             self._send_command("StopDec")
+
+            # check if we do not have any error status bits, if so we cannot home!
+            if self.get_axis_status_bits(0)['any_error'] or self.get_axis_status_bits(1)['any_error']:
+                raise MountError()
 
             self._send_command("VelRa", self.config.speeds['home_ra'])
             self._send_command("VelDec", self.config.speeds['home_dec'])
@@ -177,15 +179,16 @@ class MountComm:
             self._send_command("StopRA")
             self._send_command("StopDec")
 
+            # check if we do not have any error status bits after stopping amps, if so we cannot run!
+            if self.get_axis_status_bits(0)['any_error'] or self.get_axis_status_bits(1)['any_error']:
+                raise MountError()
+
             self._send_command("RunRA")
             self._send_command("RunDec")
 
         except Exception as e:
             self.logger.error(f"Failed to send run command: {e}")
             raise
-
-    def standby_mount(self):
-        pass
 
     def park_mount(self):
         """
@@ -213,8 +216,31 @@ class MountComm:
             self.logger.error(f"Failed to send park commands: {e}")
             raise
 
-    def shift_mount(self):
-        pass
+    def shift_mount(self, ra_delta_degrees:float, dec_delta_degrees:float):
+
+        try:
+
+            self.logger.debug("Shifting the mount!")
+
+            # calculate the delta in encoders steps
+            ra_delta_enc = ra_delta_degrees * self.config.encoder['steps_per_deg_ra']
+            dec_delta_enc = dec_delta_degrees * self.config.encoder['steps_per_deg_dec']
+
+            # calculate the shift velocity in encoder steps per second
+            ra_vel = self.config.speeds['fine_ra'] * self.config.encoder['steps_per_deg_ra']
+            dec_vel = self.config.speeds['fine_dec'] * self.config.encoder['steps_per_deg_dec']
+
+            # get the final new position in encoder steps
+            ra_enc = self.get_encoder_position(0)[0] + ra_delta_enc
+            dec_enc = self.get_encoder_position(1)[0] + dec_delta_enc
+
+            # send the new move command ...
+            self._move_mount(ra_enc, dec_enc, ra_vel, dec_vel, stop=False)
+
+        except Exception as e:
+            self.logger.error(f"Failed to send shift mount commands: {e}")
+            raise e
+
 
     def zero_mount(self):
         pass
@@ -242,10 +268,10 @@ class MountComm:
             self._send_command("VelRa", 0)
             self._send_command("VelDec", 0)
 
+            time.sleep(1.0)
+
             ra_now = self.get_encoder_position(0)[0]
             dec_now = self.get_encoder_position(1)[0]
-
-            time.sleep(1.0)
 
             self._send_command("PosRA", ra_now)
             self._send_command("PosDec", dec_now)
@@ -255,8 +281,6 @@ class MountComm:
             self.logger.error(f"Failed when trying to idle mount: {e}")
 
             raise
-
-    pass
 
     def _move_mount(self, ra_enc, dec_enc, ra_vel, dec_vel, stop=True):
         """
@@ -438,7 +462,7 @@ class MountComm:
         """
         Sends a command to the mount and waits for a valid response.
 
-        This method constructs a command packet, including the CRC checksum, 
+        This method constructs a command packet, including the CRC checksum,
         and sends it to the mount. It will retry the command up to MAX_RETRIES
         times if the communication fails.
 
@@ -587,6 +611,7 @@ class MountComm:
             - 'pos_limit': True if the positive limit switch is active.
             - 'brake_on': True if the brake is engaged.
             - 'amp_disabled': True if the motor amplifier is disabled.
+            - 'any_error': True if ANY of the above flags are active.
 
         Raises:
             ValueError: If an invalid axis index is provided.
@@ -599,11 +624,10 @@ class MountComm:
         elif axis_index == 1:
             cmd_key = "Status2Dec"
         else:
-            raise ValueError("Invalid Axis")
+            raise ValueError(f"Invalid Axis Index: {axis_index}")
 
-        # 2. Send & Receive
+        # 1. Send & Receive
         # Expected Format: "$Status2RA, <Word1_Hex>, <Word2_Hex><CRC>"
-        # Example: "$Status2RA, 0000, 0010A1B2"
         response = self._send_command(cmd_key)
 
         try:
@@ -611,39 +635,37 @@ class MountComm:
             parts = clean_response.split(',')
 
             if len(parts) < 3:
-                raise ValueError("Malformed response")
+                raise ValueError(f"Malformed response: {response}")
 
-            # Parse Hex Strings to Integers
+            # 2. Parse Hex Strings to Integers
             word1 = int(parts[1].strip(), 16)
             word2 = int(parts[2].strip(), 16)
 
-            # In the C code:
-            # word1 contained: ESTOP, NEG_LIM, POS_LIM
-            # word2 contained: BRAKE, AMP_DIS
+            # 3. Check bits using Bitwise AND (&)
+            # word1 contains: ESTOP, NEG_LIM, POS_LIM
+            # word2 contains: BRAKE, AMP_DIS
+            estop_active = bool(word1 & self.BIT_MASKS['ESTOP'])
+            neg_limit_active = bool(word1 & self.BIT_MASKS['NEG_LIM'])
+            pos_limit_active = bool(word1 & self.BIT_MASKS['POS_LIM'])
+            brake_active = bool(word2 & self.BIT_MASKS['BRAKE_ON'])
+            amp_disabled = bool(word2 & self.BIT_MASKS['AMP_DISABLE'])
 
-            status = {
-                'raw_word1': word1,
-                'raw_word2': word2,
-
-                # Check bits using Bitwise AND (&)
-                'estop': bool(word1 & self.BIT_MASKS['ESTOP']),
-                'neg_limit': bool(word1 & self.BIT_MASKS['NEG_LIM']),
-                'pos_limit': bool(word1 & self.BIT_MASKS['POS_LIM']),
-                'brake_on': bool(word2 & self.BIT_MASKS['BRAKE_ON']),
-                'amp_disabled': bool(word2 & self.BIT_MASKS['AMP_DISABLE']),
-            }
-
-            # Log warnings if critical bits are set
-            if status['estop']:
-                self.logger.critical(f"Axis {axis_index}: E-STOP ACTIVE!")
-            if status['neg_limit'] or status['pos_limit']:
-                self.logger.warning(f"Axis {axis_index}: Limit Switch Hit")
+            # 4. Build the Status Dictionary
+            status = {'raw_word1': word1, 'raw_word2': word2, 'estop': estop_active, 'neg_limit': neg_limit_active,
+                      'pos_limit': pos_limit_active, 'brake_on': brake_active, 'amp_disabled': amp_disabled,
+                      'any_error': (
+                              estop_active or
+                              neg_limit_active or
+                              pos_limit_active or
+                              brake_active or
+                              amp_disabled
+                      )}
 
             return status
 
-        except (ValueError, IndexError) as e:
-            self.logger.error(f"Status2 Parse Error: {e} | Raw: {response}")
-            raise MountConnectionError(f"Failed to parse status: {e}")
+        except ValueError as e:
+            self.logger.error(f"Failed to parse status response: {e}")
+            raise MountConnectionError(f"Status Parse Error: {e}")
 
     def get_last_fault(self) -> str:
         """
@@ -697,53 +719,7 @@ class MountComm:
             self.logger.error(f"Failed to get fault history: {e}")
             return "Error retrieving fault"
 
-    def send_home(self):
-        """
-        Initiates the mount's homing sequence.
-
-        This sets the homing velocity, stops any existing motion, and then
-        sends the 'HomeRA' and 'HomeDec' commands to the mount.
-        """
-        self.logger.info("Initiating Mount Homing Sequence...")
-
-        try:
-            # 2. Set Homing Velocities
-            # The mount needs to know how fast to spin while looking for the sensor.
-            # We set this BEFORE the Home command.
-            self.stop_motion()
-
-            self._send_command("VelRa", self.HOME_SPEED_RA)
-            self._send_command("VelDec", self.HOME_SPEED_DEC)
-
-            # 3. Stop Motion
-            # The C code explicitly calls stop_axis before homing.
-            # We use try/except because we want to proceed even if the mount
-            # complains that the brake is already on.
-            try:
-                self.stop_motion()
-                # Give it a moment to settle
-                time.sleep(0.5)
-
-            except MountSafetyError:
-                self.logger.warning("Stop before home reported safety flags (ignoring)")
-
-            # 4. Trigger Homing
-            # These commands put the controller into "Homing Mode".
-            # It will move until it hits the index mark, then stop and reset its internal counter to 0.
-            self._send_command("HomeRA")
-            self._send_command("HomeDec")
-
-            self.logger.debug("Homing Triggered!")
-
-        except MountConnectionError as e:
-            self.logger.critical(f"Homing handshake failed: {e}")
-            # If comms fail here, we try to stop just in case
-            try:
-                self.stop_motion()
-            except:
-                pass
-            raise e
-
+###### THESE ARE NOW DEPRECATED !!!
     def move_to(self, ra_pos: int, dec_pos: int, speed_ra: float, speed_dec: float):
         """
         Commands the mount to move to a specific encoder position.
