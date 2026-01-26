@@ -2,6 +2,7 @@ import logging
 import time
 import serial
 import crc
+from configuration import MountConfig
 
 
 # --- Custom Exceptions for Clarity ---
@@ -42,19 +43,18 @@ class MountComm:
     Args:
         port (str): The serial port to connect to (e.g., "/dev/ttyS0").
         baudrate (int): The baud rate for the serial communication.
+        config_file (str): Path to the configuration YAML file.
     """
 
-    def __init__(self, port: str = "/dev/ttyS0", baudrate=9600, ):
+    def __init__(self, port: str = "/dev/ttyS0", baudrate=9600, config_file="conf.yaml"):
         """Initializes the MountComm object and opens the serial port."""
         self.logger = logging.getLogger("SchierMount")
+
+        # Load Configuration
+        self.config = MountConfig(config_file)
+
         self.serial = serial.Serial(port, baudrate, timeout=1.0)
         self.MAX_RETRIES = 3
-
-        self.SLEW_SPEED_RA = 15000
-        self.SLEW_SPEED_DEC = 15000
-
-        self.HOME_SPEED_RA = 24382 * 1.0
-        self.HOME_SPEED_DEC = 19395 * 1.0  # seems to be very important!
 
         self.BIT_MASKS = {
             'ESTOP': 0x0001,
@@ -63,24 +63,6 @@ class MountComm:
             'BRAKE_ON': 0x0008,
             'AMP_DISABLE': 0x0010
         }
-
-        self.SIDEREAL_RATE = 1
-
-
-        # ensure the mount doesn't drift while it configures acceleration limits.
-        self._send_command("VelRa", 0)
-        self._send_command("VelDec", 0)
-
-        # setup acceleration and max velocity using the defaults from original rotsed
-
-        self._send_command("AccelRa", 24382 * 25)
-        self._send_command("AccelDec", 19395 * 25)
-
-        self._send_command("MaxVelRA", 24382 * 35)
-        self._send_command("MaxVelDec", 19395 * 35) # fuck it we ball
-
-        # and give the mount a kick ...
-        self.recover_servo_state()
 
     def disconnect(self):
         """
@@ -101,76 +83,234 @@ class MountComm:
         except Exception as e:
             self.logger.error(f"Disconnection failed: {e}")
 
-    def recover_servo_state(self):
+    def init_mount(self):
         """
-        Attempts to recover the servo motors from a fault state.
+        Initializes the mount hardware with default motion parameters.
 
-        This sends a sequence of commands to clear any existing faults and
-        re-enable the motor amplifiers.
+        This method sets the acceleration and maximum velocity limits for both
+        axes and performs a Halt/Stop sequence to reset the servo amplifiers
+        and velocity curves.
         """
-        self.logger.warning("Attempting Servo Recovery (i.e. giving the mount a kick!)...")
+        self.logger.debug("Initiating the Mount!")
 
         try:
-
-            # The "Kick" !
-            # The C code sends Halt, then Stop.
-            # Halt kills the trajectory generator. Stop enables the Amps.
+            # zero the mount velocities
 
             self._send_command("VelRa", 0)
             self._send_command("VelDec", 0)
 
+            # setup acceleration and max velocity using the config
+
+            accel_ra = int(self.config.acceleration['slew_ra'] * self.config.encoder['steps_per_deg_ra'])
+            accel_dec = int(self.config.acceleration['slew_dec'] * self.config.encoder['steps_per_deg_dec'])
+
+            self._send_command("AccelRa", accel_ra)
+            self._send_command("AccelDec", accel_dec)
+
+            # Use slew speed as max velocity since that's how it's mapped in configuration.py
+            max_ra = int(self.config.speeds['slew_ra'] * self.config.encoder['steps_per_deg_ra'])
+            max_dec = int(self.config.speeds['slew_dec'] * self.config.encoder['steps_per_deg_dec'])
+
+            self._send_command("MaxVelRA", max_ra)
+            self._send_command("MaxVelDec", max_dec)
+
+            # we need to halt the mount to deactivate the amps, then stop to re-engage them!
+            # need this to reset velocity curves but sketchy without physical breaks so beware ...
+
             self._send_command("HaltRA")
-            self._send_command("HaltDec")
+            self._send_command("StopRA")
             time.sleep(0.2)
 
-            self._send_command("StopRA")
+            self._send_command("HaltDec")
             self._send_command("StopDec")
-            time.sleep(0.5)
+            time.sleep(0.2)
 
-        except Exception as e:
-            self.logger.error(f"Recovery failed: {e}")
-
-
-    # TODO: add low level comm methods like smith & rykoffs original c code !!
+        except MountConnectionError as e:
+            self.logger.error(f"Mount initialization failed: {e}")
+            raise
 
     def query_mount(self):
         pass
 
+    def home_mount(self):
+        """
+        Initiates the homing sequence for both axes.
 
-    def calibrate_mount(selfs):
-        pass
+        This method sets the homing velocities from the configuration,
+        stops the servos and resets velocity curves, and triggers the hardware homing
+        routine for RA and Dec.
+        """
+        self.logger.debug("Sending the mount home!")
+
+        try:
+
+            # mount has to be in STOP else it will freeze serial!
+            # TODO: verify status bits before sending home!
+            self._send_command("StopRA")
+            self._send_command("StopDec")
+
+            self._send_command("VelRa", self.config.speeds['home_ra'])
+            self._send_command("VelDec", self.config.speeds['home_dec'])
+
+            self._send_command("HomeRA")
+            self._send_command("HomeDec")
+        except Exception as e:
+            self.logger.error(f"Mount homing failed: {e}")
+            raise
 
     def run_mount(self):
-        pass
+        """
+        Activates the motor amplifiers for both axes.
 
-    def standby_mount(selfs):
+        This method transitions the mount from a stopped or halted state to
+        a running state. It sets the velocities to zero and sends the Run command
+        to engage the servos, allowing the mount to respond to motion commands.
+        """
+        self.logger.debug("Sending run command to mount!")
+
+        try:
+
+            # zero the velocities so the mount does not lurch after stop is released ...
+            self._send_command("VelRa", 0)
+            self._send_command("VelDec", 0)
+
+            self._send_command("StopRA")
+            self._send_command("StopDec")
+
+            self._send_command("RunRA")
+            self._send_command("RunDec")
+
+        except Exception as e:
+            self.logger.error(f"Failed to send run command: {e}")
+            raise
+
+    def standby_mount(self):
         pass
 
     def park_mount(self):
-        pass
+        """
+        Moves the mount to its designated park position.
+
+        The park position and the speed used for the move are retrieved from
+        the configuration. This method calculates the target encoder counts
+        based on the park coordinates and the encoder zero points.
+        """
+        self.logger.debug("Parking the mount!")
+
+        try:
+
+            ra_speed = self.config.speeds['home_ra'] * self.config.encoder['steps_per_deg_ra']
+            dec_speed = self.config.speeds['home_dec'] * self.config.encoder['steps_per_deg_dec']
+
+            park_ra = self.config.park('ra') * self.config.encoder['steps_per_deg_ra'] + self.config.encoder[
+                'zeropt_ra']
+            park_dec = self.config.park('dec') * self.config.encoder['steps_per_deg_dec'] + self.config.encoder[
+                'zeropt_dec']
+
+            self._move_mount(park_ra, park_dec, ra_speed, dec_speed, stop=True)
+
+        except Exception as e:
+            self.logger.error(f"Failed to send park commands: {e}")
+            raise
 
     def shift_mount(self):
         pass
 
-    def zero_mount(selfs):
+    def zero_mount(self):
         pass
 
     def slew_mount(self):
         pass
 
-    def track_mount(self):
+    def track_mount(self, ra_vel: int, dec_vel: int):
         pass
 
     def idle_mount(self):
-       """
-        Places the mount in an idle state.
-
-        This method is intended to stop any active tracking or slewing
-        by setting velocities to zero, while maintaining the servo
-        loop and amplifier state.
         """
+         Places the mount in an idle state.
+
+         This method is intended to stop any active tracking or slewing
+         by setting velocities to zero, while maintaining the servo
+         loop and amplifier state.
+         """
+        try:
+
+            self.logger.debug("Idling the Mount!")
+
+            # Zero the Velocity Registers
+
+            self._send_command("VelRa", 0)
+            self._send_command("VelDec", 0)
+
+            ra_now = self.get_encoder_position(0)[0]
+            dec_now = self.get_encoder_position(1)[0]
+
+            time.sleep(1.0)
+
+            self._send_command("PosRA", ra_now)
+            self._send_command("PosDec", dec_now)
+
+        except Exception as e:
+
+            self.logger.error(f"Failed when trying to idle mount: {e}")
+
+            raise
+
     pass
 
+    def _move_mount(self, ra_enc, dec_enc, ra_vel, dec_vel, stop=True):
+        """
+        Internal method to move the mount to specific encoder positions.
+
+        This method performs safety limit checks against the configuration
+        before sending the position and velocity commands to the controller.
+
+        Args:
+            ra_enc: Target RA position in encoder counts.
+            dec_enc: Target Dec position in encoder counts.
+            ra_vel: RA velocity in encoder counts per second.
+            dec_vel: Dec velocity in encoder counts per second.
+            stop: Whether to stop current motion before initiating the move.
+
+        Raises:
+            MountSafetyError: If the target positions are outside the software limits.
+            MountConnectionError: If communication with the mount fails.
+        """
+        self.logger.debug("Sending a move to the Mount!")
+
+        try:
+
+            # stop the mount before moving if requested
+            if stop:
+                self._send_command("VelRa", 0)
+                self._send_command("VelDec", 0)
+
+            # check if ra is (as Rykoff puts it) kosher ...
+            if (ra_enc > (self.config.limits('ra_max') * self.config.encoder['steps_per_deg_ra'] + self.config.encoder[
+                'zeropt_ra']) or ra_enc < self.config.limits('ra_min') * self.config.encoder['steps_per_deg_ra'] +
+                    self.config.encoder['zeropt_ra']):
+                raise MountSafetyError()
+
+            # now if dec is too ...
+            if (dec_enc > (
+                    self.config.limits('dec_max') * self.config.encoder['steps_per_deg_dec'] + self.config.encoder[
+                'zeropt_dec']) or dec_enc < self.config.limits('dec_min') * self.config.encoder['steps_per_deg_dec'] +
+                    self.config.encoder['zeropt_dec']):
+                raise MountSafetyError()
+
+            # set the positions ...
+            self._send_command("PosRA", ra_enc)
+            self._send_command("PosDec", dec_enc)
+
+            # set the velocities and away we go ...
+            self._send_command("VelRa", ra_vel)
+            self._send_command("VelDec", dec_vel)
+
+
+        except Exception as e:
+            # Ensure we don't leave the mount in a weird state if a command fails
+            self.logger.error(f"Failed when trying to move mount: {e}")
+            raise e
 
     def _stop_axis(self, axis_index: int):
         """
@@ -619,7 +759,7 @@ class MountComm:
             speed_dec: The speed for the Dec axis in counts/sec.
         """
 
-        vel_ra = int(speed_ra if speed_ra is not None else self.HOME_SPEED_RA )
+        vel_ra = int(speed_ra if speed_ra is not None else self.HOME_SPEED_RA)
         vel_dec = int(speed_dec if speed_dec is not None else self.HOME_SPEED_DEC)
 
         self.logger.debug(f"Slewing to ({ra_pos}, {dec_pos}) at vel ({vel_ra}, {vel_dec})")
@@ -687,11 +827,9 @@ class MountComm:
         except Exception:
             pass  # If comms are bad, we did our best
 
-
         # 3. Wait for Settle
         # Important so that subsequent commands don't crash the controller
         time.sleep(0.5)
-
 
     def track_sidereal(self):
         pass
