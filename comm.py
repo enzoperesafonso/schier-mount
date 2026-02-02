@@ -216,15 +216,22 @@ class MountComm:
             self.logger.error(f"Failed to send park commands: {e}")
             raise
 
-    def shift_mount(self, ra_delta_degrees:float, dec_delta_degrees:float):
+    def shift_mount(self, ra_delta_enc: int, dec_delta_enc: int):
+        """
+        Performs a relative move (shift) from the current target position.
+
+        This method calculates a new target by adding the provided encoder
+        deltas to the current commanded positions and initiates a move
+        at 'fine' speeds without stopping current motion first.
+
+        Args:
+            ra_delta_enc (int): Relative RA movement in encoder counts.
+            dec_delta_enc (int): Relative Dec movement in encoder counts.
+        """
 
         try:
 
             self.logger.debug("Shifting the mount!")
-
-            # calculate the delta in encoders steps
-            ra_delta_enc = ra_delta_degrees * self.config.encoder['steps_per_deg_ra']
-            dec_delta_enc = dec_delta_degrees * self.config.encoder['steps_per_deg_dec']
 
             # calculate the shift velocity in encoder steps per second
             ra_vel = self.config.speeds['fine_ra'] * self.config.encoder['steps_per_deg_ra']
@@ -241,15 +248,80 @@ class MountComm:
             self.logger.error(f"Failed to send shift mount commands: {e}")
             raise e
 
-
     def zero_mount(self):
-        pass
+        """
+        Updates the configuration zero points using the current encoder positions.
 
-    def slew_mount(self):
-        pass
+        This method queries the mount for the current RA and Dec encoder counts
+        and updates the internal configuration object. This is typically used
+        after a manual alignment or homing sequence to establish the reference
+        frame.
+        """
+        self.logger.debug("Zeroing the mount to current position...")
+
+        try:
+            # Get current actual encoder positions (index 1 of the returned tuple)
+            ra_pos = self.get_encoder_position(0)[1]
+            dec_pos = self.get_encoder_position(1)[1]
+
+            # Update the configuration zero points
+            self.config.encoder['zeropt_ra'] = ra_pos
+            self.config.encoder['zeropt_dec'] = dec_pos
+
+            self.logger.info(f"Mount zeroed. New Zero Points - RA: {ra_pos}, Dec: {dec_pos}")
+
+        except Exception as e:
+            self.logger.error(f"Failed to zero mount: {e}")
+            raise
+
+    def slew_mount(self, ra_enc: int, dec_enc: int):
+        """
+        Initiates a slew to the specified RA and Dec encoder positions.
+
+        The slew is performed at the slew speeds defined in the configuration.
+
+        Args:
+            ra_enc (int): Target RA position in encoder counts.
+            dec_enc (int): Target Dec position in encoder counts.
+        """
+        self.logger.debug(f"Slewing mount to RA: {ra_enc}, Dec: {dec_enc}")
+
+        try:
+            ra_vel = self.config.speeds['slew_ra'] * self.config.encoder['steps_per_deg_ra']
+            dec_vel = self.config.speeds['slew_dec'] * self.config.encoder['steps_per_deg_dec']
+
+            self._move_mount(ra_enc, dec_enc, ra_vel, dec_vel, stop=True)
+        except Exception as e:
+            self.logger.error(f"Failed to initiate slew: {e}")
+            raise
 
     def track_mount(self, ra_vel: int, dec_vel: int):
-        pass
+        """
+        Sets the mount to track at specific velocities.
+
+        This method calculates the target positions based on the direction of
+        the provided velocities (moving toward the software limits) and
+        initiates the move.
+
+        Args:
+            ra_vel (int): RA velocity in encoder counts per second.
+            dec_vel (int): Dec velocity in encoder counts per second.
+        """
+        try:
+            self.logger.debug(f"Tracking mount at VelRA: {ra_vel}, VelDec: {dec_vel}")
+
+            # Determine target based on velocity direction
+            ra_limit = 'ra_max' if ra_vel >= 0 else 'ra_min'
+            dec_limit = 'dec_max' if dec_vel >= 0 else 'dec_min'
+
+            ra_target = self.config.limits(ra_limit) * self.config.encoder['steps_per_deg_ra'] + self.config.encoder['zeropt_ra']
+            dec_target = self.config.limits(dec_limit) * self.config.encoder['steps_per_deg_dec'] + self.config.encoder['zeropt_dec']
+
+            self._move_mount(ra_target, dec_target, abs(ra_vel), abs(dec_vel), stop=False)
+
+        except Exception as e:
+            self.logger.error(f"Failed to initiate tracking: {e}")
+            raise
 
     def idle_mount(self):
         """
@@ -270,8 +342,8 @@ class MountComm:
 
             time.sleep(1.0)
 
-            ra_now = self.get_encoder_position(0)[0]
-            dec_now = self.get_encoder_position(1)[0]
+            ra_now = self.get_encoder_position(0)[1]
+            dec_now = self.get_encoder_position(1)[1]
 
             self._send_command("PosRA", ra_now)
             self._send_command("PosDec", dec_now)
@@ -718,94 +790,3 @@ class MountComm:
         except serial.SerialException as e:
             self.logger.error(f"Failed to get fault history: {e}")
             return "Error retrieving fault"
-
-###### THESE ARE NOW DEPRECATED !!!
-    def move_to(self, ra_pos: int, dec_pos: int, speed_ra: float, speed_dec: float):
-        """
-        Commands the mount to move to a specific encoder position.
-
-        This method sends the target position and velocity to the mount.
-        The sequence of commands is important: first the target positions are
-        set, then the velocities are set to initiate the motion.
-
-        Args:
-            ra_pos: The target RA position in encoder counts.
-            dec_pos: The target Dec position in encoder counts.
-            speed_ra: The speed for the RA axis in counts/sec.
-            speed_dec: The speed for the Dec axis in counts/sec.
-        """
-
-        vel_ra = int(speed_ra if speed_ra is not None else self.HOME_SPEED_RA)
-        vel_dec = int(speed_dec if speed_dec is not None else self.HOME_SPEED_DEC)
-
-        self.logger.debug(f"Slewing to ({ra_pos}, {dec_pos}) at vel ({vel_ra}, {vel_dec})")
-
-        try:
-
-            # Make sure the mount is actually stopped before any movement or else we get an error!
-            self.stop_motion()
-
-            # --- We need to 'ready' the servos for movement before giving commands"---
-            self._send_command("RunRa", vel_ra)
-            self._send_command("RunDec", vel_dec)
-
-            # --- 3. Send Targets (Load the Registers) ---
-            # Note: This does NOT move the mount yet. It just tells the controller
-            # "If I tell you to go, this is where you go."
-            self._send_command("PosRA", ra_pos)
-            self._send_command("PosDec", dec_pos)
-
-            # --- 4. Send Velocities (The Trigger) ---
-            # Setting velocity > 0 causes the PID controller to activate and
-            # drive towards the 'Pos' target set above.
-            self._send_command("VelRa", vel_ra)
-            self._send_command("VelDec", vel_dec)
-
-
-        except MountConnectionError as e:
-            # If the command sequence breaks halfway, we are in an unknown state.
-            # Best practice: Try to stop immediately.
-            self.logger.critical("Slew command sequence failed! Attempting Stop.")
-            try:
-                self.stop_motion()
-            except:
-                pass  # We tried our best
-            raise e
-
-    # NEVER HALT THE MOUNT, THE BREAKS ARE GONE IT WILL JUST FALL OVER!
-    def stop_motion(self):
-        """
-        Stops all motion on both axes.
-
-        This sends a stop command to each axis and then sets the commanded
-        velocity to zero as a safety measure.
-        """
-        self.logger.debug("Stopping mount!")
-
-        # 1. Send Stop Commands (Highest Priority)
-        # We try both even if the first fails
-        try:
-            self._stop_axis(0)  # RA
-        except Exception as e:
-            self.logger.error(f"Failed to stop RA: {e}")
-
-        try:
-            self._stop_axis(1)  # Dec
-        except Exception as e:
-            self.logger.error(f"Failed to stop Dec: {e}")
-
-        # Zero the Velocity Registers
-        # This ensures that if the 'Stop' latch is released,
-        # the mount doesn't try to resume the previous speed.
-        try:
-            self._send_command("VelRa", 0)
-            self._send_command("VelDec", 0)
-        except Exception:
-            pass  # If comms are bad, we did our best
-
-        # 3. Wait for Settle
-        # Important so that subsequent commands don't crash the controller
-        time.sleep(0.5)
-
-    def track_sidereal(self):
-        pass
