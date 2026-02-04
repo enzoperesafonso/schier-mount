@@ -37,8 +37,8 @@ class MountConfig:
         }
 
         self.speeds = {
-            'slew_ra': 20.0, 'slew_dec': 20.0,
-            'fine_ra': 15.0, 'fine_dec': 15.0,
+            'slew_ra': 10.0, 'slew_dec': 10.0,
+            'fine_ra': 5.0, 'fine_dec': 5.0,
             'home_ra': 2.0, 'home_dec': 2.0,
             'max_ra': 25.0, 'max_dec':  25.0
         }
