@@ -229,7 +229,7 @@ class MountComm:
 
 
     def standby_mount(self):
-        """ #TODO UPdate
+        """ #TODO UPdat  se
         Moves the mount to its designated standby position.
 
         The park position and the speed used for the move are retrieved from
