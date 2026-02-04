@@ -51,7 +51,7 @@ class MountComm:
         self.logger = logging.getLogger("SchierMount")
 
         # Load Configuration
-        self.config = MountConfig(config_file)
+        self.config = MountConfig()
 
         self.serial = serial.Serial(port, baudrate, timeout=1.0)
 
@@ -587,7 +587,7 @@ class MountComm:
                 time.sleep(0.2)
 
         # --- 3. Critical Failure ---
-        self.logger.error(f"Critical: Failed to send {cmd_key} after {self.MAX_RETRIES} attempts.")
+        self.logger.error(f"Critical: Failed to send {cmd_key} after {retries} attempts.")
         raise MountConnectionError(f"Hard failure sending {cmd_key}: {last_error}")
 
     def get_encoder_position(self, axis_index: int) -> tuple[int, int]:
