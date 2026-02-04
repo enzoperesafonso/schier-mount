@@ -300,7 +300,7 @@ class MountComm:
             ra_vel = self.config.speeds['slew_ra'] * self.config.encoder['steps_per_deg_ra']
             dec_vel = self.config.speeds['slew_dec'] * self.config.encoder['steps_per_deg_dec']
 
-            self._move_mount(ra_enc, dec_enc, ra_vel, dec_vel, stop=True)
+            self._move_mount(ra_enc, dec_enc, ra_vel, dec_vel, stop=False)
         except Exception as e:
             self.logger.error(f"Failed to initiate slew: {e}")
             raise
