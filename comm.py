@@ -107,7 +107,6 @@ class MountComm:
             # reset mounts command parser!
             self._clear_comm()
 
-
             # zero the mount velocities
 
             self._send_command("VelRa", 0)
