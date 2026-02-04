@@ -232,11 +232,11 @@ class MountComm:
         """ #TODO UPdat  se
         Moves the mount to its designated standby position.
 
-        The park position and the speed used for the move are retrieved from
+        The standby zenith position and the speed used for the move are retrieved from
         the configuration. This method calculates the target encoder counts
         based on the park coordinates and the encoder zero points.
         """
-        self.logger.debug("Parking the mount!")
+        self.logger.debug("Sending mount the mount to zenith!")
 
         try:
 
