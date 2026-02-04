@@ -226,6 +226,34 @@ class MountComm:
             self.logger.error(f"Failed to send park commands: {e}")
             raise
 
+
+
+    def standby_mount(self):
+        """ #TODO UPdate
+        Moves the mount to its designated standby position.
+
+        The park position and the speed used for the move are retrieved from
+        the configuration. This method calculates the target encoder counts
+        based on the park coordinates and the encoder zero points.
+        """
+        self.logger.debug("Parking the mount!")
+
+        try:
+
+            ra_speed = self.config.speeds['home_ra'] * self.config.encoder['steps_per_deg_ra']
+            dec_speed = self.config.speeds['home_dec'] * self.config.encoder['steps_per_deg_dec']
+
+            park_ra = self.config.standby['ra'] * self.config.encoder['steps_per_deg_ra'] + self.config.encoder[
+                'zeropt_ra']
+            park_dec = self.config.standby['dec'] * self.config.encoder['steps_per_deg_dec'] + self.config.encoder[
+                'zeropt_dec']
+
+            self._move_mount(park_ra, park_dec, ra_speed, dec_speed, stop=True)
+
+        except Exception as e:
+            self.logger.error(f"Failed to send park commands: {e}")
+            raise
+
     def shift_mount(self, ra_delta_enc: int, dec_delta_enc: int):
         """
         Performs a relative move (shift) from the current target position.

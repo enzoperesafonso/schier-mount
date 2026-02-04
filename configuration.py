@@ -47,7 +47,7 @@ class MountConfig:
             'slew_ra': 25.0, 'slew_dec': 25.0,
         }
 
-        self.park = {'ra': -95.0, 'dec':  174.0}
+        self.park = {'ra': -95.0, 'dec': 35.0}
 
         self.standby = {'ra': -95.0, 'dec': 174.0}
 
