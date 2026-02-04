@@ -215,9 +215,9 @@ class MountComm:
             ra_speed = self.config.speeds['home_ra'] * self.config.encoder['steps_per_deg_ra']
             dec_speed = self.config.speeds['home_dec'] * self.config.encoder['steps_per_deg_dec']
 
-            park_ra = self.config.park('ra') * self.config.encoder['steps_per_deg_ra'] + self.config.encoder[
+            park_ra = self.config.park['ra'] * self.config.encoder['steps_per_deg_ra'] + self.config.encoder[
                 'zeropt_ra']
-            park_dec = self.config.park('dec') * self.config.encoder['steps_per_deg_dec'] + self.config.encoder[
+            park_dec = self.config.park['dec'] * self.config.encoder['steps_per_deg_dec'] + self.config.encoder[
                 'zeropt_dec']
 
             self._move_mount(park_ra, park_dec, ra_speed, dec_speed, stop=True)
@@ -324,8 +324,8 @@ class MountComm:
             ra_limit = 'ra_max' if ra_vel >= 0 else 'ra_min'
             dec_limit = 'dec_max' if dec_vel >= 0 else 'dec_min'
 
-            ra_target = self.config.limits(ra_limit) * self.config.encoder['steps_per_deg_ra'] + self.config.encoder['zeropt_ra']
-            dec_target = self.config.limits(dec_limit) * self.config.encoder['steps_per_deg_dec'] + self.config.encoder['zeropt_dec']
+            ra_target = self.config.limits[ra_limit] * self.config.encoder['steps_per_deg_ra'] + self.config.encoder['zeropt_ra']
+            dec_target = self.config.limits[dec_limit] * self.config.encoder['steps_per_deg_dec'] + self.config.encoder['zeropt_dec']
 
             self._move_mount(ra_target, dec_target, abs(ra_vel), abs(dec_vel), stop=False)
 
@@ -392,15 +392,15 @@ class MountComm:
                 self._send_command("VelDec", 0)
 
             # check if ra is (as Rykoff puts it) kosher ...
-            if (ra_enc > (self.config.limits('ra_max') * self.config.encoder['steps_per_deg_ra'] + self.config.encoder[
-                'zeropt_ra']) or ra_enc < self.config.limits('ra_min') * self.config.encoder['steps_per_deg_ra'] +
+            if (ra_enc > (self.config.limits['ra_max'] * self.config.encoder['steps_per_deg_ra'] + self.config.encoder[
+                'zeropt_ra']) or ra_enc < self.config.limits['ra_min'] * self.config.encoder['steps_per_deg_ra'] +
                     self.config.encoder['zeropt_ra']):
                 raise MountSafetyError()
 
             # now if dec is too ...
             if (dec_enc > (
-                    self.config.limits('dec_max') * self.config.encoder['steps_per_deg_dec'] + self.config.encoder[
-                'zeropt_dec']) or dec_enc < self.config.limits('dec_min') * self.config.encoder['steps_per_deg_dec'] +
+                    self.config.limits['dec_max'] * self.config.encoder['steps_per_deg_dec'] + self.config.encoder[
+                'zeropt_dec']) or dec_enc < self.config.limits['dec_min'] * self.config.encoder['steps_per_deg_dec'] +
                     self.config.encoder['zeropt_dec']):
                 raise MountSafetyError()
 
