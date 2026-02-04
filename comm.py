@@ -54,7 +54,6 @@ class MountComm:
         self.config = MountConfig(config_file)
 
         self.serial = serial.Serial(port, baudrate, timeout=1.0)
-        self.MAX_RETRIES = 3
 
         self.BIT_MASKS = {
             'ESTOP': 0x0001,
@@ -74,7 +73,16 @@ class MountComm:
 
         try:
 
-            self.stop_motion()
+            # zero the velocities so the mount does not lurch after stop is released ...
+            self._send_command("VelRa", 0)
+            self._send_command("VelDec", 0)
+
+            self._send_command("StopRA")
+            self._send_command("StopDec")
+
+            # check if we do not have any error status bits after stopping amps, if so we cannot run!
+            if self.get_axis_status_bits(0)['any_error'] or self.get_axis_status_bits(1)['any_error']:
+                raise MountError()
 
             time.sleep(0.5)
 
@@ -128,9 +136,6 @@ class MountComm:
             self.logger.error(f"Mount initialization failed: {e}")
             raise
 
-    def query_mount(self):
-        pass
-
     def home_mount(self):
         """
         Initiates the homing sequence for both axes.
@@ -154,10 +159,10 @@ class MountComm:
             self._send_command("VelRa", self.config.speeds['home_ra'])
             self._send_command("VelDec", self.config.speeds['home_dec'])
 
-            self._send_command("HomeRA")
-            self._send_command("HomeDec")
+            self._send_command("HomeRA",1)
+            self._send_command("HomeDec",1)
         except Exception as e:
-            self.logger.error(f"Mount homing failed: {e}")
+            self.logger.error(f"Failed to home run command: {e}")
             raise
 
     def run_mount(self):
@@ -408,39 +413,6 @@ class MountComm:
             self.logger.error(f"Failed when trying to move mount: {e}")
             raise e
 
-    def _stop_axis(self, axis_index: int):
-        """
-        Sends a Stop command to the specified axis and verifies mount health.
-
-        Args:
-            axis_index: The axis to stop (0 for RA, 1 for Dec).
-
-        Raises:
-            ValueError: If an invalid axis index is provided.
-            MountSafetyError: If the mount reports E-Stop, Brake, or Amp Disable
-                              flags after the stop command.
-        """
-
-        if axis_index == 0:
-            cmd_key = "StopRA"
-        elif axis_index == 1:
-            cmd_key = "StopDec"
-        else:
-            raise ValueError("Invalid Axis Index")
-
-        self.logger.debug(f"Stopping Axis {axis_index}...")
-
-        # Send the Stop Command
-        # The mount should reply (e.g. "$StopRA<CRC>") confirming receipt.
-        try:
-            self._send_command(cmd_key)
-            ''
-            self.logger.debug(f"Axis {axis_index} Stopped Successfully.")
-
-        except MountConnectionError as e:
-            # If the stop command fails to send, we are in trouble.
-            raise MountSafetyError(f"FAILED TO SEND STOP COMMAND TO AXIS {axis_index}: {e}")
-
     def _clear_comm(self):
         """
         Clears serial communication buffers and resets the mount's command parser.
@@ -530,7 +502,7 @@ class MountComm:
 
         return True
 
-    def _send_command(self, cmd_key: str, value=None) -> str:
+    def _send_command(self, cmd_key: str, value=None, retries = 3) -> str:
         """
         Sends a command to the mount and waits for a valid response.
 
@@ -568,7 +540,7 @@ class MountComm:
         # --- 2. The Retry Loop ---
         last_error = None
 
-        for attempt in range(self.MAX_RETRIES):
+        for attempt in range(retries):
             try:
 
                 # Clear input buffer to ensure we don't read old garbage.
