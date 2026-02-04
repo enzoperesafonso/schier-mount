@@ -105,7 +105,7 @@ class MountComm:
 
 
             # reset mounts command parser!
-            self._clear_comm()
+            #self._clear_comm()
 
             # zero the mount velocities
 
