@@ -40,7 +40,7 @@ class MountConfig:
             'slew_ra': 5.0, 'slew_dec': 5.0,
             'fine_ra': 0.5, 'fine_dec': 0.5,
             'home_ra': 2.0, 'home_dec': 2.0,
-            'max_ra': 100.0, 'max_dec':  100.0
+            'max_ra': 50.0, 'max_dec':  50.0
         }
 
         self.acceleration = {
