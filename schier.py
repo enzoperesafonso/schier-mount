@@ -5,6 +5,7 @@ from enum import Enum, auto
 from comm import MountComm
 from configuration import MountConfig
 
+
 class MountState(Enum):
     IDLE = auto()
     SLEWING = auto()
@@ -23,10 +24,8 @@ class SchierMount():
 
         self.logger = logging.getLogger("SchierMount")
 
-
         self._status_task = None
         self._move_task = None  # Track the active move
-
 
         self.serial_lock = asyncio.Lock()
 
@@ -36,16 +35,31 @@ class SchierMount():
         }
 
         self.config = MountConfig()
-        self.comm = MountComm(config = self.config)
+        self.comm = MountComm(config=self.config)
 
         self.state = MountState.UNKNOWN
 
     async def init_mount(self):
+        """
+        Initializes the mount hardware and starts the background status monitoring loop.
 
-        self.comm.init_mount()
-        self.state = MountState.PARKED
+        This method sends the initialization command to the hardware, sets the initial
+        state to PARKED, and ensures the status polling task is running.
 
-        self._status_task = asyncio.create_task(self._status_loop())
+        Raises:
+            Exception: If hardware initialization fails.
+        """
+        try:
+            self.logger.info("Initializing mount hardware...")
+            await self._safe_comm(self.comm.init_mount)
+            self.state = MountState.PARKED
+            if self._status_task is None or self._status_task.done():
+                self._status_task = asyncio.create_task(self._status_loop())
+            self.logger.info("Mount initialization complete.")
+        except Exception as e:
+            self.state = MountState.UNKNOWN
+            self.logger.error(f"Failed to initialize mount: {e}")
+            raise
 
     async def home_mount(self):
         """
@@ -83,6 +97,14 @@ class SchierMount():
             self._move_task = None
 
     async def stop_mount(self):
+        """
+        Immediately stops all mount movement and cancels active movement tasks.
+
+        This method:
+        1. Sends an idle command to the hardware to stop motor movement.
+        2. Sets the mount state to IDLE.
+        3. Cancels any running asynchronous movement tasks (e.g., homing or parking).
+        """
         self.logger.info("Stopping mount...")
 
         # 1. Stop the Hardware
@@ -92,7 +114,6 @@ class SchierMount():
         # 2. Stop the Software Task
         if self._move_task and not self._move_task.done():
             self._move_task.cancel()
-
 
     async def park_mount(self):
         """
@@ -127,13 +148,50 @@ class SchierMount():
         finally:
             self._move_task = None
 
-    def unpark_mount(self):
+    async def standby_mount(self):
+        """
+        Moves the mount to the standby (zenith) position.
+
+        This method:
+        1. Sets the mount state to SLEWING.
+        2. Sends the hardware command to move to the standby position.
+        3. Monitors encoder feedback until movement stops (within tolerance).
+        4. Transitions the mount state to IDLE.
+
+        Raises:
+            TimeoutError: If the mount fails to stabilize at the standby position within the timeout.
+            Exception: For communication or hardware errors during the sequence.
+        """
+        try:
+            self.logger.info("Sending mount to standby position (zenith) ...")
+            self.state = MountState.SLEWING
+            self._move_task = asyncio.current_task()
+
+            # Use safe_comm to send the park command
+            await self._safe_comm(self.comm.standby_mount)
+
+            self.logger.debug("Standby command sent, waiting for encoders to reach target...")
+            await self._await_encoder_stop(tolerance=10, timeout=120)
+
+            self.state = MountState.IDLE
+            self.logger.info("Mount moved to standby pos.")
+
+        except Exception as e:
+            logging.error(f"Failed to move mount: {e}")
+        finally:
+            self._move_task = None
+
+    async def track_sidereal(self):
+        sidereal_rate_deg_per_sec = 0.004178
         pass
 
-    def standby_mount(self):
+    async def shift_mount(self):
         pass
 
-    def track_sidereal(self):
+    async def slew_mount(self):
+        pass
+
+    async def track_non_sidereal(self, ra_rat : float, dec_rate : float):
         pass
 
     def _attempt_recovery(self):
@@ -209,8 +267,8 @@ class SchierMount():
                 ra_target, ra_actual = await self._safe_comm(self.comm.get_encoder_position, 0)
                 dec_target, dec_actual = await self._safe_comm(self.comm.get_encoder_position, 1)
 
-                ra_axis_status = await self._safe_comm(self.comm.get_axis_status_bits,0)
-                dec_axis_status = await self._safe_comm(self.comm.get_axis_status_bits,1)
+                ra_axis_status = await self._safe_comm(self.comm.get_axis_status_bits, 0)
+                dec_axis_status = await self._safe_comm(self.comm.get_axis_status_bits, 1)
 
                 self.current_positions = {
                     "ra_enc": ra_actual, "ra_target_enc": ra_target,
