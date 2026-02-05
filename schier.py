@@ -78,8 +78,6 @@ class SchierMount():
         last_ra = self.current_positions["ra_enc"]
         last_dec = self.current_positions["dec_enc"]
 
-        await asyncio.sleep(0.2)
-
         while (asyncio.get_event_loop().time() - start_time) < timeout:
             curr_ra = self.current_positions["ra_enc"]
             curr_dec = self.current_positions["dec_enc"]
