@@ -39,7 +39,7 @@ async def run_homing_test():
 
         await mount._safe_comm(mount.comm.zero_mount)
 
-        await asyncio.sleep(1)
+        await asyncio.sleep(10)
 
         print("\nSending park command...")
         mount.state = MountState.PARKING
