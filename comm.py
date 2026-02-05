@@ -46,12 +46,12 @@ class MountComm:
         config_file (str): Path to the configuration YAML file.
     """
 
-    def __init__(self, port: str = "/dev/ttyS0", baudrate=9600, config_file="conf.yaml"):
+    def __init__(self, port: str = "/dev/ttyS0", baudrate=9600, config = MountConfig()):
         """Initializes the MountComm object and opens the serial port."""
         self.logger = logging.getLogger("SchierMount")
 
         # Load Configuration
-        self.config = MountConfig()
+        self.config = config
 
         self.serial = serial.Serial(port, baudrate, timeout=1.0)
 

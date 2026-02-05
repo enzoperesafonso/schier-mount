@@ -2,7 +2,8 @@ import asyncio
 import logging
 from enum import Enum, auto
 
-import comm
+from comm import MountComm
+from configuration import MountConfig
 
 class MountState(Enum):
     IDLE = auto()
@@ -21,7 +22,7 @@ class SchierMount():
     def __init__(self):
 
         self.logger = logging.getLogger("SchierMount")
-        self.comm = comm.MountComm()
+
 
         self._status_task = None
         self.serial_lock = asyncio.Lock()
@@ -30,6 +31,9 @@ class SchierMount():
             "ra_enc": 0, "ra_target_enc": 0,
             "dec_enc": 0, "dec_target_enc": 0,
         }
+
+        self.config = MountConfig()
+        self.comm = MountComm(config = self.config)
 
         self.state = MountState.UNKNOWN
 
