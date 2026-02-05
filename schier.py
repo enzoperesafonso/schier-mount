@@ -38,6 +38,8 @@ class SchierMount():
         self.comm.init_mount()
         self.state = MountState.PARKED
 
+        self._status_task = asyncio.create_task(self._status_loop())
+
     def calibrate_mount(self):
         pass
 
