@@ -33,7 +33,7 @@ class SchierMount():
 
         self.state = MountState.UNKNOWN
 
-    def init_mount(self):
+    async def init_mount(self):
 
         self.comm.init_mount()
         self.state = MountState.PARKED
