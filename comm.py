@@ -63,6 +63,9 @@ class MountComm:
             'AMP_DISABLE': 0x0010
         }
 
+        self.ra_target_enc = 0
+        self.dec_target_enc = 0
+
     def disconnect(self):
         """
         Safely disconnects from the mount.
@@ -220,6 +223,9 @@ class MountComm:
             park_dec = self.config.park['dec'] * self.config.encoder['steps_per_deg_dec'] + self.config.encoder[
                 'zeropt_dec']
 
+            self.ra_target_enc = park_ra
+            self.dec_target_enc = park_dec
+
             self._move_mount(park_ra, park_dec, ra_speed, dec_speed, stop=True)
 
         except Exception as e:
@@ -245,6 +251,9 @@ class MountComm:
                 'zeropt_ra']
             park_dec = self.config.standby['dec'] * self.config.encoder['steps_per_deg_dec'] + self.config.encoder[
                 'zeropt_dec']
+
+            self.ra_target_enc = park_ra
+            self.dec_target_enc = park_dec
 
             self._move_mount(park_ra, park_dec, ra_speed, dec_speed, stop=True)
 
@@ -276,6 +285,9 @@ class MountComm:
             # get the final new position in encoder steps
             ra_enc = self.get_encoder_position(0)[0] + ra_delta_enc
             dec_enc = self.get_encoder_position(1)[0] + dec_delta_enc
+
+            self.ra_target_enc = ra_enc
+            self.dec_target_enc = dec_enc
 
             # send the new move command ...
             self._move_mount(ra_enc, dec_enc, ra_vel, dec_vel, stop=False)
@@ -326,6 +338,9 @@ class MountComm:
             ra_vel = self.config.speeds['slew_ra'] * self.config.encoder['steps_per_deg_ra']
             dec_vel = self.config.speeds['slew_dec'] * self.config.encoder['steps_per_deg_dec']
 
+            self.ra_target_enc = ra_enc
+            self.dec_target_enc = dec_enc
+
             self._move_mount(ra_enc, dec_enc, ra_vel, dec_vel, stop=False)
         except Exception as e:
             self.logger.error(f"Failed to initiate slew: {e}")
@@ -352,6 +367,9 @@ class MountComm:
 
             ra_target = self.config.limits[ra_limit] * self.config.encoder['steps_per_deg_ra'] + self.config.encoder['zeropt_ra']
             dec_target = self.config.limits[dec_limit] * self.config.encoder['steps_per_deg_dec'] + self.config.encoder['zeropt_dec']
+
+            self.ra_target_enc = ra_target
+            self.dec_target_enc = dec_target
 
             self._move_mount(ra_target, dec_target, abs(ra_vel), abs(dec_vel), stop=False)
 
@@ -380,6 +398,9 @@ class MountComm:
 
             ra_now = self.get_encoder_position(0)[1]
             dec_now = self.get_encoder_position(1)[1]
+
+            self.ra_target_enc = ra_now
+            self.dec_target_enc = dec_now
 
             self._send_command("PosRA", ra_now)
             self._send_command("PosDec", dec_now)
@@ -634,8 +655,10 @@ class MountComm:
         """
         if axis_index == 0:
             cmd_key = "Status1RA"
+            target = self.ra_target_enc
         elif axis_index == 1:
             cmd_key = "Status1Dec"
+            target = self.dec_target_enc
         else:
             raise ValueError(f"Invalid axis index: {axis_index}")
 
@@ -662,7 +685,7 @@ class MountComm:
             # 3. Parse Numbers
             # We MUST use float() first because the log showed '.0' in the string.
             # int('100.0') crashes Python, but int(float('100.0')) works.
-            target_pos = int(float(tokens[1]))
+            target_pos = target
             actual_pos = int(float(tokens[2]))
 
             return target_pos, actual_pos
