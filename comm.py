@@ -244,8 +244,8 @@ class MountComm:
 
         try:
 
-            ra_speed = self.config.speeds['home_ra'] * self.config.encoder['steps_per_deg_ra']
-            dec_speed = self.config.speeds['home_dec'] * self.config.encoder['steps_per_deg_dec']
+            ra_speed = self.config.speeds['slew_ra'] * self.config.encoder['steps_per_deg_ra']
+            dec_speed = self.config.speeds['slew_dec'] * self.config.encoder['steps_per_deg_dec']
 
             park_ra = self.config.standby['ra'] * self.config.encoder['steps_per_deg_ra'] + self.config.encoder[
                 'zeropt_ra']
@@ -449,10 +449,6 @@ class MountComm:
                     self.config.limits['dec_max'] * self.config.encoder['steps_per_deg_dec'] + self.config.encoder[
                 'zeropt_dec']) or dec_enc < self.config.limits['dec_min'] * self.config.encoder['steps_per_deg_dec'] +
                     self.config.encoder['zeropt_dec']):
-
-                print(f'Dec out of bound {  self.config.limits['dec_max'] * self.config.encoder['steps_per_deg_dec'] + self.config.encoder[
-                'zeropt_dec']} and {self.config.limits['dec_min'] * self.config.encoder['steps_per_deg_dec'] +
-                    self.config.encoder['zeropt_dec']}')
                 raise MountSafetyError()
 
             # set the positions ...
