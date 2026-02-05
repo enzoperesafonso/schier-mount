@@ -449,6 +449,10 @@ class MountComm:
                     self.config.limits['dec_max'] * self.config.encoder['steps_per_deg_dec'] + self.config.encoder[
                 'zeropt_dec']) or dec_enc < self.config.limits['dec_min'] * self.config.encoder['steps_per_deg_dec'] +
                     self.config.encoder['zeropt_dec']):
+
+                print(f'Dec out of bound {  self.config.limits['dec_max'] * self.config.encoder['steps_per_deg_dec'] + self.config.encoder[
+                'zeropt_dec']} and {dec_enc < self.config.limits['dec_min'] * self.config.encoder['steps_per_deg_dec'] +
+                    self.config.encoder['zeropt_dec']}')
                 raise MountSafetyError()
 
             # set the positions ...
