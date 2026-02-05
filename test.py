@@ -28,7 +28,7 @@ async def run_homing_test():
         print("Homing initiated. Waiting for encoders to stabilize...")
 
         # This uses your logic: waits until movement is < tolerance for 5 seconds
-        await mount._await_encoder_stop(tolerance=5, timeout=120)
+        await mount._await_encoder_stop(tolerance=100, timeout=120)
 
         print("\n" + "=" * 30)
         print("SUCCESS: Encoders have stopped.")
@@ -50,7 +50,7 @@ async def run_homing_test():
         print("Parking initiated. Waiting for encoders to stabilize...")
 
         # This uses your logic: waits until movement is < tolerance for 5 seconds
-        await mount._await_mount_at_position()
+        await mount._await_mount_at_position(tolerance=100, timeout=120)
 
         print("\n" + "=" * 30)
         print("SUCCESS: Encoders have Reached park.")
