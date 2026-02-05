@@ -1,86 +1,66 @@
 import asyncio
 import logging
-import sys
-
-# Import your modules
+import os
 from schier import SchierMount, MountState
 
-# Setup logging to console
+# Set up basic logging to see what's happening under the hood
 logging.basicConfig(
     level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    handlers=[logging.StreamHandler(sys.stdout)]
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 
 
-async def monitor_state(driver, state, message):
-    """
-    Background task to print status while a specific state is active.
-    """
-    print(f"\n--- MONITORING {message.upper()} ---")
-    while driver.state == state:
-        stat = driver.encoder_status
-        enc_ra = stat.get('ra_enc', 'N/A')
-        enc_dec = stat.get('dec_enc', 'N/A')
+async def print_status_forever(mount):
+    """Periodically clears the screen and prints the current telemetry."""
+    print("Starting Live Telemetry Monitor (Ctrl+C to stop)...")
+    await asyncio.sleep(2)  # Give the status loop a moment to start
 
-        # Overwrite the same line for a clean display
-        sys.stdout.write(f"\r{message} in progress... RA: {enc_ra} | Dec: {enc_dec}   ")
-        sys.stdout.flush()
-        await asyncio.sleep(0.5)
-    print(f"\n--- {message.upper()} MONITOR END ---")
+    try:
+        while True:
+            # Clear terminal screen (works on Linux/Mac)
+            os.system('clear')
+
+            t = mount.telemetry
+            print("=" * 40)
+            print(f" ROTSE-IIIc MOUNT STATUS | State: {mount.state.name}")
+            print("=" * 40)
+
+            print(f"RA  (Actual):  {t['ra_enc']:>10} | {t['ra_deg']:>8.4f}°")
+            print(f"RA  (Target):  {t['ra_target_enc']:>10}")
+            print("-" * 40)
+            print(f"DEC (Actual):  {t['dec_enc']:>10} | {t['dec_deg']:>8.4f}°")
+            print(f"DEC (Target):  {t['dec_target_enc']:>10}")
+            print("-" * 40)
+            print(f"Moving:        {'YES' if t['is_moving'] else 'NO'}")
+
+            # Add a small note if it's in a fault state
+            if mount.state == MountState.FAULT:
+                print("\n[!] WARNING: Mount is in a FAULT state. Check hardware.")
+
+            await asyncio.sleep(0.5)
+    except asyncio.CancelledError:
+        pass
 
 
 async def main():
-    print("=== SCHIER MOUNT FULL CYCLE TEST ===")
+    # 1. Instantiate the High-Level Driver
+    mount = SchierMount()
 
     try:
-        driver = SchierMount()
-    except Exception as e:
-        print(f"Initialization Failed: {e}")
-        return
+        # 2. Initialize (this starts the comms and the _status_loop)
+        # Note: Ensure your /dev/ttyS0 permissions are correct!
+        await mount.init_mount()
 
-    # Start Driver Loop
-    driver_task = asyncio.create_task(driver.initialize())
-
-    # Wait for first status
-    print("Waiting for driver connection...")
-    while not driver.encoder_status:
-        await asyncio.sleep(0.1)
-
-    print(f"Initial State: {driver.state}")
-
-    try:
-        # 1. Homing
-        print("\n>>> STARTING HOMING SEQUENCE <<<")
-        print("WARNING: Mount will move to limit switches!")
-        monitor_task = asyncio.create_task(monitor_state(driver, MountState.HOMING, "Homing"))
-        await driver.home()
-        await monitor_task
-        print(">>> HOMING COMPLETE <<<")
-        print(f"State after homing: {driver.state}")
-
-        # 2. Parking
-        print("\n>>> STARTING PARKING SEQUENCE <<<")
-        monitor_task = asyncio.create_task(monitor_state(driver, MountState.PARKING, "Parking"))
-        await driver.park()
-        await monitor_task
-        print(">>> PARKING COMPLETE <<<")
-        print(f"State after parking: {driver.state}")
-
-        # 3. Unparking
-        print("\n>>> STARTING UNPARKING SEQUENCE <<<")
-        monitor_task = asyncio.create_task(monitor_state(driver, MountState.PARKED, "Unparking"))
-        await driver.unpark()
-        await monitor_task
-        print(">>> UNPARKING COMPLETE <<<")
-        print(f"Final State: {driver.state}")
+        # 3. Run the monitor
+        await print_status_forever(mount)
 
     except Exception as e:
-        print(f"\n!!! TEST FAILED: {e} !!!")
-
+        print(f"Failed to start test: {e}")
     finally:
-        print("\nShutting down...")
-        driver_task.cancel()
+        # Ensure we close the serial port on exit
+        if hasattr(mount.comm, 'serial'):
+            mount.comm.serial.close()
+            print("\nSerial connection closed.")
 
 
 if __name__ == "__main__":

@@ -226,8 +226,6 @@ class MountComm:
             self.logger.error(f"Failed to send park commands: {e}")
             raise
 
-
-
     def standby_mount(self):
         """ #TODO UPdat  se
         Moves the mount to its designated standby position.
