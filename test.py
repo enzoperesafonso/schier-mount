@@ -1,70 +1,53 @@
 import asyncio
 import logging
-import os
 from schier import SchierMount, MountState
 
-# Set up basic logging to see what's happening under the hood
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
+# Setup logging to see the "any_error" or "validation" logs from comm.py
+logging.basicConfig(level=logging.INFO)
 
 
-async def print_status_forever(mount):
-    """Periodically clears the screen and prints the current telemetry."""
-    print("Starting Live Telemetry Monitor (Ctrl+C to stop)...")
-    await asyncio.sleep(2)  # Give the status loop a moment to start
-
-    try:
-        while True:
-            # Clear terminal screen (works on Linux/Mac)
-            os.system('clear')
-
-            t = mount.telemetry
-            print("=" * 40)
-            print(f" ROTSE-IIIc MOUNT STATUS | State: {mount.state.name}")
-            print("=" * 40)
-
-            print(f"RA  (Actual):  {t['ra_enc']:>10} | {t['ra_deg']:>8.4f}°")
-            print(f"RA  (Target):  {t['ra_target_enc']:>10}")
-            print("-" * 40)
-            print(f"DEC (Actual):  {t['dec_enc']:>10} | {t['dec_deg']:>8.4f}°")
-            print(f"DEC (Target):  {t['dec_target_enc']:>10}")
-            print("-" * 40)
-            print(f"Moving:        {'YES' if t['is_moving'] else 'NO'}")
-
-            # Add a small note if it's in a fault state
-            if mount.state == MountState.FAULT:
-                print("\n[!] WARNING: Mount is in a FAULT state. Check hardware.")
-
-            await asyncio.sleep(0.5)
-    except asyncio.CancelledError:
-        pass
-
-
-async def main():
-    # 1. Instantiate the High-Level Driver
+async def run_homing_test():
     mount = SchierMount()
 
+    print("Connecting to mount and starting status loop...")
+    await mount.init_mount()
+
+    # Wait a moment for the first few telemetry pulses to populate current_positions
+    await asyncio.sleep(1)
+
+    print(f"Current State: {mount.state.name}")
+    print(f"Initial Position - RA: {mount.current_positions['ra_enc']}, Dec: {mount.current_positions['dec_enc']}")
+
     try:
-        # 2. Initialize (this starts the comms and the _status_loop)
-        # Note: Ensure your /dev/ttyS0 permissions are correct!
-        await mount.init_mount()
+        print("\nSending Home command...")
+        mount.state = MountState.HOMING
 
-        # 3. Run the monitor
-        await print_status_forever(mount)
+        # Use safe_comm to send the homing command
+        await mount._safe_comm(mount.comm.home_mount)
 
+        print("Homing initiated. Waiting for encoders to stabilize...")
+
+        # This uses your logic: waits until movement is < tolerance for 5 seconds
+        await mount._await_encoder_stop(tolerance=5, timeout=120)
+
+        print("\n" + "=" * 30)
+        print("SUCCESS: Encoders have stopped.")
+        print(f"Final Position - RA: {mount.current_positions['ra_enc']}, Dec: {mount.current_positions['dec_enc']}")
+        print("=" * 30)
+
+        mount.state = MountState.IDLE
+
+    except TimeoutError as e:
+        print(f"\n[!] ERROR: {e}")
     except Exception as e:
-        print(f"Failed to start test: {e}")
+        print(f"\n[!] Unexpected Error during homing: {e}")
     finally:
-        # Ensure we close the serial port on exit
-        if hasattr(mount.comm, 'serial'):
-            mount.comm.serial.close()
-            print("\nSerial connection closed.")
+        # Cleanup: Stop the background task and close serial
+        if mount._status_task:
+            mount._status_task.cancel()
+        mount.comm.serial.close()
+        print("Serial connection closed.")
 
 
 if __name__ == "__main__":
-    try:
-        asyncio.run(main())
-    except KeyboardInterrupt:
-        pass
+    asyncio.run(run_homing_test())
