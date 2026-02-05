@@ -25,6 +25,9 @@ class SchierMount():
 
 
         self._status_task = None
+        self._move_task = None  # Track the active move
+
+
         self.serial_lock = asyncio.Lock()
 
         self.current_positions = {
@@ -44,14 +47,85 @@ class SchierMount():
 
         self._status_task = asyncio.create_task(self._status_loop())
 
-    def calibrate_mount(self):
-        pass
+    async def home_mount(self):
+        """
+        Initiates the homing sequence for both axes.
 
-    def stop_mount(self):
-        pass
+        This method performs the following steps:
+        1. Sets the mount state to HOMING.
+        2. Sends the hardware homing command to the controller.
+        3. Monitors encoder feedback until movement stops (within tolerance).
+        4. Resets the internal encoder counts to zero at the home position.
+        5. Transitions the mount state to IDLE.
 
-    def park_mount(self):
-        pass
+        Raises:
+            TimeoutError: If the mount fails to stabilize at home within the timeout.
+            Exception: For communication or hardware errors during the sequence.
+        """
+        try:
+            self.logger.debug("Starting homing sequence...")
+            self.state = MountState.HOMING
+            self._move_task = asyncio.current_task()
+
+            # Use safe_comm to send the homing command
+            await self._safe_comm(self.comm.home_mount)
+
+            self.logger.debug("Homing command sent, waiting for encoders to stabilize...")
+            await self._await_encoder_stop(tolerance=10, timeout=120)
+
+            await self._safe_comm(self.comm.zero_mount)
+
+            self.state = MountState.IDLE
+            self.logger.info("Homing sequence completed successfully.")
+        except Exception as e:
+            logging.error(f"Failed to home mount: {e}")
+        finally:
+            self._move_task = None
+
+    async def stop_mount(self):
+        self.logger.info("Stopping mount...")
+
+        # 1. Stop the Hardware
+        await self._safe_comm(self.comm.idle_mount)
+        self.state = MountState.IDLE
+
+        # 2. Stop the Software Task
+        if self._move_task and not self._move_task.done():
+            self._move_task.cancel()
+
+
+    async def park_mount(self):
+        """
+        Initiates the parking sequence for the mount.
+
+        This method performs the following steps:
+        1. Sets the mount state to PARKING.
+        2. Sends the hardware homing command to move the mount to its park position.
+        3. Monitors encoder feedback until movement reaches target (within tolerance).
+        4. Transitions the mount state to PARKED.
+
+        Raises:
+            TimeoutError: If the mount fails to stabilize at the park position within the timeout.
+            Exception: For communication or hardware errors during the sequence.
+        """
+        try:
+            self.logger.info("Parking mount...")
+            self.state = MountState.PARKING
+            self._move_task = asyncio.current_task()
+
+            # Use safe_comm to send the park command
+            await self._safe_comm(self.comm.home_mount)
+
+            self.logger.debug("Parking command sent, waiting for encoders to reach target...")
+            await self._await_encoder_stop(tolerance=10, timeout=120)
+
+            self.state = MountState.PARKED
+            self.logger.info("Homing sequence completed successfully.")
+
+        except Exception as e:
+            logging.error(f"Failed to park mount: {e}")
+        finally:
+            self._move_task = None
 
     def unpark_mount(self):
         pass
