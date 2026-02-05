@@ -98,7 +98,7 @@ class SchierMount():
             await asyncio.sleep(0.2)
         raise TimeoutError("Mount failed to stop within timeout period.")
 
-    async def _await_mount_at_position(self, timeout=180, tolerance=10):
+    async def _await_mount_at_position(self, timeout=180, tolerance=2):
         """
         Wait until current encoder positions match target positions within tolerance.
 
