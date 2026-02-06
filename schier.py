@@ -138,7 +138,7 @@ class SchierMount():
             self._move_task = asyncio.current_task()
 
             # Use safe_comm to send the park command
-            await self._safe_comm(self.comm.park_mount())
+            await self._safe_comm(self.comm.park_mount)
 
             self.logger.debug("Parking command sent, waiting for encoders to reach target...")
             await self._await_encoder_stop(tolerance=10, timeout=120)
@@ -273,11 +273,10 @@ class SchierMount():
                 ra_axis_status = await self._safe_comm(self.comm.get_axis_status_bits, 0)
                 dec_axis_status = await self._safe_comm(self.comm.get_axis_status_bits, 1)
 
-                if ra_target and dec_target:
-                    self.current_positions = {
-                        "ra_enc": ra_actual, "ra_target_enc": ra_target,
-                        "dec_enc": dec_actual, "dec_target_enc": dec_target,
-                    }
+                self.current_positions = {
+                    "ra_enc": ra_actual, "ra_target_enc": ra_target,
+                    "dec_enc": dec_actual, "dec_target_enc": dec_target,
+                }
 
                 if ra_axis_status['any_error'] or dec_axis_status['any_error']:
                     self.state = MountState.FAULT
