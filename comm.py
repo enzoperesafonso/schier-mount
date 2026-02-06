@@ -215,8 +215,8 @@ class MountComm:
 
         try:
 
-            ra_speed = self.config.speeds['slew_ra'] * self.config.encoder['steps_per_deg_ra']
-            dec_speed = self.config.speeds['slew_dec'] * self.config.encoder['steps_per_deg_dec']
+            ra_speed = self.config.speeds['home_ra'] * self.config.encoder['steps_per_deg_ra']
+            dec_speed = self.config.speeds['home_dec'] * self.config.encoder['steps_per_deg_dec']
 
             park_ra = self.config.park['ra'] * self.config.encoder['steps_per_deg_ra'] + self.config.encoder[
                 'zeropt_ra']
@@ -233,7 +233,7 @@ class MountComm:
             raise
 
     def standby_mount(self):
-        """ #TODO UPdat  se
+        """
         Moves the mount to its designated standby position.
 
         The standby zenith position and the speed used for the move are retrieved from

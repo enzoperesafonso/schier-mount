@@ -85,7 +85,7 @@ class SchierMount():
             await self._safe_comm(self.comm.home_mount)
 
             self.logger.debug("Homing command sent, waiting for encoders to stabilize...")
-            await self._await_encoder_stop(tolerance=10, timeout=120)
+            await self._await_encoder_stop(tolerance=100, timeout=120)
 
             await self._safe_comm(self.comm.zero_mount)
 
@@ -138,7 +138,7 @@ class SchierMount():
             await self._safe_comm(self.comm.park_mount)
 
             self.logger.debug("Parking command sent, waiting for encoders to reach target...")
-            await self._await_encoder_stop(tolerance=10, timeout=120)
+            await self._await_encoder_stop(tolerance=100, timeout=120)
 
             self.state = MountState.PARKED
             self.logger.info("Homing sequence completed successfully.")
@@ -171,7 +171,7 @@ class SchierMount():
             await self._safe_comm(self.comm.standby_mount)
 
             self.logger.debug("Standby command sent, waiting for encoders to reach target...")
-            await self._await_encoder_stop(tolerance=10, timeout=120)
+            await self._await_encoder_stop(tolerance=100, timeout=120)
 
             self.state = MountState.IDLE
             self.logger.info("Mount moved to standby pos.")
@@ -191,13 +191,13 @@ class SchierMount():
     async def slew_mount(self):
         pass
 
-    async def track_non_sidereal(self, ra_rat : float, dec_rate : float):
+    async def track_non_sidereal(self, ra_rate : float, dec_rate : float):
         pass
 
     def _attempt_recovery(self):
         pass
 
-    async def _await_encoder_stop(self, tolerance=10, timeout=60):
+    async def _await_encoder_stop(self, tolerance=100, timeout=60):
         """
         Wait until encoders stay within tolerance for 5 seconds or timeout.
 
@@ -227,10 +227,10 @@ class SchierMount():
                 stable_start_time = None
                 last_ra, last_dec = curr_ra, curr_dec
 
-            await asyncio.sleep(0.2)
+            await asyncio.sleep(0.1)
         raise TimeoutError("Mount failed to stop within timeout period.")
 
-    async def _await_mount_at_position(self, timeout=180, tolerance=2):
+    async def _await_mount_at_position(self, timeout=180, tolerance=100):
         """
         Wait until current encoder positions match target positions within tolerance.
 
@@ -281,4 +281,4 @@ class SchierMount():
             except Exception as e:
                 self.logger.error(f"Status Loop Error: {e}")
 
-            await asyncio.sleep(0.2)  # 5Hz Polling
+            await asyncio.sleep(0.1)
