@@ -1,20 +1,24 @@
 import asyncio
+import sys
 import logging
-import aioconsole  # pip install aioconsole
-from your_module_name import SchierMount, MountState
+from your_module_name import SchierMount
 
-# Configure logging to see what the driver is doing
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+# Setup basic logging to console
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s [%(levelname)s] %(message)s'
+)
 
-async def main_loop():
-    mount = SchierMount()
-    print("--- SchierMount CLI Test Tool ---")
-    print("Commands: init, home, park, standby, stop, status, exit")
+
+async def handle_input(mount):
+    print("\n--- SchierMount Terminal Controller ---")
+    print("Commands: init, home, park, stop, pos, exit")
 
     while True:
-        # Get user input asynchronously
-        cmd = await aioconsole.ainput("Mount > ")
-        cmd = cmd.strip().lower()
+        # Standard input reading in a non-blocking way
+        print("Command > ", end='', flush=True)
+        line = await asyncio.get_event_loop().run_in_executor(None, sys.stdin.readline)
+        cmd = line.strip().lower()
 
         try:
             if cmd == "init":
@@ -23,25 +27,30 @@ async def main_loop():
                 await mount.home_mount()
             elif cmd == "park":
                 await mount.park_mount()
-            elif cmd == "standby":
-                await mount.standby_mount()
             elif cmd == "stop":
                 await mount.stop_mount()
-            elif cmd == "status":
-                print(f"State: {mount.state}")
-                print(f"Positions: {mount.current_positions}")
+            elif cmd == "pos":
+                p = mount.current_positions
+                print(f"\n[POS] RA: {p['ra_enc']} | DEC: {p['dec_enc']}")
+                print(f"[STATE] {mount.state}\n")
             elif cmd == "exit":
                 await mount.stop_mount()
                 break
-            elif cmd == "":
-                continue
             else:
                 print(f"Unknown command: {cmd}")
         except Exception as e:
-            print(f"Error executing command: {e}")
+            print(f"Execution Error: {e}")
+
+
+async def main():
+    mount = SchierMount()
+    # The status loop is started inside mount.init_mount() in your class
+    # but we run the input handler here.
+    await handle_input(mount)
+
 
 if __name__ == "__main__":
     try:
-        asyncio.run(main_loop())
+        asyncio.run(main())
     except KeyboardInterrupt:
-        pass
+        print("\nExiting...")
