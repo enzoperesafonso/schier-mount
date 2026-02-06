@@ -60,6 +60,26 @@ async def run_homing_test():
 
         mount.state = MountState.PARKED
 
+        print("\nSending standby command...")
+        mount.state = MountState.PARKING
+
+        # Use safe_comm to send the homing command
+        await mount._safe_comm(mount.comm.standby_mount)
+
+        await asyncio.sleep(1)
+
+        print("Standy initiated. Waiting for encoders to stabilize...")
+
+        # This uses your logic: waits until movement is < tolerance for 5 seconds
+        await mount._await_mount_at_position(tolerance=10, timeout=120)
+
+        print("\n" + "=" * 30)
+        print("SUCCESS: Encoders have Reached park.")
+        print(f"Final Position - RA: {mount.current_positions['ra_enc']}, Dec: {mount.current_positions['dec_enc']}")
+        print("=" * 30)
+
+        mount.state = MountState.IDLE
+
     except TimeoutError as e:
         print(f"\n[!] ERROR: {e}")
     except Exception as e:
