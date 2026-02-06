@@ -61,6 +61,9 @@ class SchierMount():
             self.logger.error(f"Failed to initialize mount: {e}")
             raise
 
+    async def disconnect_mount(self):
+        pass
+
     async def home_mount(self):
         """
         Initiates the homing sequence for both axes.
@@ -135,7 +138,7 @@ class SchierMount():
             self._move_task = asyncio.current_task()
 
             # Use safe_comm to send the park command
-            await self._safe_comm(self.comm.home_mount)
+            await self._safe_comm(self.comm.park_mount())
 
             self.logger.debug("Parking command sent, waiting for encoders to reach target...")
             await self._await_encoder_stop(tolerance=10, timeout=120)
