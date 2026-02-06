@@ -233,7 +233,7 @@ class SchierMount():
             await asyncio.sleep(0.2)
         raise TimeoutError("Mount failed to stop within timeout period.")
 
-    async def _await_mount_at_position(self, timeout=180, tolerance=2):
+    async def _await_mount_at_position(self, timeout=180, tolerance=10):
         """
         Wait until current encoder positions match target positions within tolerance.
 
@@ -266,22 +266,25 @@ class SchierMount():
     async def _status_loop(self):
         while True:
             try:
+                # Acquire the lock ONCE for the whole group of commands
+                async with self.serial_lock:
+                    # We use to_thread inside the lock so no one else can
+                    # interrupt the serial line until all 4 calls finish.
+                    ra_target, ra_actual = await asyncio.to_thread(self.comm.get_encoder_position, 0)
+                    dec_target, dec_actual = await asyncio.to_thread(self.comm.get_encoder_position, 1)
 
-                ra_target, ra_actual = await self._safe_comm(self.comm.get_encoder_position, 0)
-                dec_target, dec_actual = await self._safe_comm(self.comm.get_encoder_position, 1)
+                    ra_axis_status = await asyncio.to_thread(self.comm.get_axis_status_bits, 0)
+                    dec_axis_status = await asyncio.to_thread(self.comm.get_axis_status_bits, 1)
 
-                ra_axis_status = await self._safe_comm(self.comm.get_axis_status_bits, 0)
-                dec_axis_status = await self._safe_comm(self.comm.get_axis_status_bits, 1)
+                    self.current_positions = {
+                        "ra_enc": ra_actual, "ra_target_enc": ra_target,
+                        "dec_enc": dec_actual, "dec_target_enc": dec_target,
+                    }
 
-                self.current_positions = {
-                    "ra_enc": ra_actual, "ra_target_enc": ra_target,
-                    "dec_enc": dec_actual, "dec_target_enc": dec_target,
-                }
-
-                if ra_axis_status['any_error'] or dec_axis_status['any_error']:
-                    self.state = MountState.FAULT
+                    if ra_axis_status['any_error'] or dec_axis_status['any_error']:
+                        self.state = MountState.FAULT
 
             except Exception as e:
                 self.logger.error(f"Status Loop Error: {e}")
 
-            await asyncio.sleep(0.2)  # 5Hz Polling
+            await asyncio.sleep(0.5)  # Slowed down slightly for stability
