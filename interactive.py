@@ -26,7 +26,7 @@ async def handle_input(mount):
             elif cmd == "home":
                 await mount.home_mount()
             elif cmd == "park":
-                await mount.park_mount()
+                await mount.standby_mount()
             elif cmd == "stop":
                 await mount.stop_mount()
             elif cmd == "pos":
