@@ -1,7 +1,7 @@
 import asyncio
 import sys
 import logging
-from your_module_name import SchierMount
+from schier import SchierMount
 
 # Setup basic logging to console
 logging.basicConfig(
