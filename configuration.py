@@ -44,7 +44,7 @@ class MountConfig:
         }
 
         self.acceleration = {
-            'slew_ra': 25.0, 'slew_dec': 25.0,
+            'slew_ra': 10.0, 'slew_dec': 10.0,
         }
 
         self.park = {'ra': -95.0, 'dec': 35.0}
