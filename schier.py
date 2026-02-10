@@ -182,17 +182,97 @@ class SchierMount():
             self._move_task = None
 
     async def track_sidereal(self):
+        """
+        Starts sidereal tracking on the RA axis.
+
+        Calculates the sidereal rate in steps per second based on the mount's
+        configuration. Note that for the Southern Hemisphere, the RA motor
+        direction is inverted.
+
+        Transitions the mount state to TRACKING.
+
+        Raises:
+            Exception: If the tracking command fails to send to the hardware.
+        """
         sidereal_rate_deg_per_sec = 0.004178
-        pass
+        try:
+            self.logger.info("Starting sidereal tracking...")
+            self.state = MountState.TRACKING   # TODO: Move constants to init so we don't need to recalculate each time
 
-    async def shift_mount(self):
-        pass
+            # since we are in the SOUTHERN HEMISPHERE we need to flip the ra motor direction ...
+            sidereal_rate_steps_per_sec = -1 * sidereal_rate_deg_per_sec * self.config.encoder['steps_per_deg_ra']
 
-    async def slew_mount(self):
-        pass
+            await self._safe_comm(self.comm.track_mount, sidereal_rate_steps_per_sec, 0.0)
+
+            self.logger.info("Mount is now tracking at sidereal rate.")
+        except Exception as e:
+            self.state = MountState.FAULT
+            self.logger.error(f"Failed to start sidereal tracking: {e}")
+            raise
+
+    async def shift_mount(self, delta_ra : float, delta_dec : float):
+        """
+        Shifts the mount by a relative amount of degrees in RA and Dec.
+
+        Args:
+            delta_ra (float): Relative change in Right Ascension (degrees).
+            delta_dec (float): Relative change in Declination (degrees).
+        """
+        try:
+            self.logger.info(f"Shifting mount by RA: {delta_ra}, Dec: {delta_dec}")
+            self.state = MountState.SLEWING
+            self._move_task = asyncio.current_task()
+
+            # Convert degrees to encoder steps
+            ra_steps = delta_ra * self.config.encoder['steps_per_deg_ra']
+            dec_steps = delta_dec * self.config.encoder['steps_per_deg_dec']
+
+            await self._safe_comm(self.comm.shift_mount, ra_steps, dec_steps)
+
+            await self._await_mount_at_position()
+            self.state = MountState.IDLE
+            self.logger.info("Shift completed.")
+        except Exception as e:
+            self.logger.error(f"Failed to shift mount: {e}")
+            self.state = MountState.FAULT
+        finally:
+            self._move_task = None
 
     async def track_non_sidereal(self, ra_rate : float, dec_rate : float):
-        pass
+        """
+        Starts tracking at a custom non-sidereal rate.
+
+        Args:
+            ra_rate (float): Tracking rate for Right Ascension in degrees per second.
+            dec_rate (float): Tracking rate for Declination in degrees per second.
+
+        Raises:
+            ValueError: If the requested rate exceeds the safety limit (2.0 deg/sec).
+            Exception: If the tracking command fails to send to the hardware.
+        """
+        try:
+            self.logger.info(f"Starting non-sidereal tracking (RA: {ra_rate}, Dec: {dec_rate})...")
+            self.state = MountState.TRACKING
+
+            # Limit tracking rate to 2 degrees per second to prevent hardware strain
+            MAX_TRACK_RATE = 2.0
+            if abs(ra_rate) > MAX_TRACK_RATE or abs(dec_rate) > MAX_TRACK_RATE:
+                raise ValueError(f"Tracking rate exceeds maximum limit of {MAX_TRACK_RATE} deg/sec")
+
+            # Convert deg/sec to steps/sec
+            ra_steps_per_sec = -1* ra_rate * self.config.encoder['steps_per_deg_ra']
+            dec_steps_per_sec = dec_rate * self.config.encoder['steps_per_deg_dec']
+
+            await self._safe_comm(self.comm.track_mount, ra_steps_per_sec, dec_steps_per_sec)
+
+            self.logger.info("Mount is now tracking at non-sidereal rate.")
+        except Exception as e:
+            self.state = MountState.FAULT
+            self.logger.error(f"Failed to start non-sidereal tracking: {e}")
+            raise
+
+
+
 
     def _attempt_recovery(self):
         pass
