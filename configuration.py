@@ -47,7 +47,7 @@ class MountConfig:
 
         self.park = {'ra': -95.0, 'dec': 35.0}
 
-        self.standby = {'ra': -95.0, 'dec': 90.0}
+        self.standby = {'ra': -95.0, 'dec': 90.0 + 23.2716}
 
 
     def update_zero_points(self, ra_counts, dec_counts):
