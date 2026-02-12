@@ -1,9 +1,11 @@
 import asyncio
 import logging
+import math
 from enum import Enum, auto
 
 from comm import MountComm
 from configuration import MountConfig
+from coordinates import MountCoordinates
 
 
 class MountState(Enum):
@@ -16,7 +18,6 @@ class MountState(Enum):
     FAULT = auto()
     RECOVERING = auto()
     UNKNOWN = auto()
-
 
 class SchierMount():
 
@@ -34,7 +35,11 @@ class SchierMount():
             "dec_enc": 0, "dec_target_enc": 0,
         }
 
+        self.ra_offset_deg = 0.0
+        self.dec_offset_deg = 0.0
+
         self.config = MountConfig()
+        self.coord = MountCoordinates(config=MountConfig())
         self.comm = MountComm(config=self.config)
 
         self.state = MountState.UNKNOWN
@@ -181,6 +186,9 @@ class SchierMount():
         finally:
             self._move_task = None
 
+    async def slew_mount(self, ra_deg : float, dec_deg : float ):
+        pass
+
     async def track_sidereal(self):
         """
         Starts sidereal tracking on the RA axis.
@@ -194,13 +202,12 @@ class SchierMount():
         Raises:
             Exception: If the tracking command fails to send to the hardware.
         """
-        sidereal_rate_deg_per_sec = 0.004178
         try:
             self.logger.info("Starting sidereal tracking...")
-            self.state = MountState.TRACKING   # TODO: Move constants to init so we don't need to recalculate each time
+            self.state = MountState.TRACKING
 
             # since we are in the SOUTHERN HEMISPHERE we need to flip the ra motor direction ...
-            sidereal_rate_steps_per_sec = -1 * sidereal_rate_deg_per_sec * self.config.encoder['steps_per_deg_ra']
+            sidereal_rate_steps_per_sec = -1 * 0.004178 * self.config.encoder['steps_per_deg_ra']
 
             await self._safe_comm(self.comm.track_mount, sidereal_rate_steps_per_sec, 0.0)
 
@@ -210,30 +217,64 @@ class SchierMount():
             self.logger.error(f"Failed to start sidereal tracking: {e}")
             raise
 
-    async def shift_mount(self, delta_ra : float, delta_dec : float):
+    async def shift_mount(self, delta_ra: float, delta_dec: float):
         """
         Shifts the mount by a relative amount of degrees in RA and Dec.
+        Uses cosine projection to ensure 'delta_ra' represents true angular
+        distance on the sky regardless of proximity to the poles.
 
         Args:
-            delta_ra (float): Relative change in Right Ascension (degrees).
-            delta_dec (float): Relative change in Declination (degrees).
+            delta_ra (float): The relative shift in Right Ascension (degrees).
+            delta_dec (float): The relative shift in Declination (degrees).
+
+        Steps:
+            1. Retrieves current RA/Dec.
+            2. Applies cosine correction (secant of Dec) to RA to maintain true angular distance.
+            3. Converts corrected degrees to encoder steps.
+            4. Commands the hardware to perform a relative move.
+            5. Waits for the mount to reach the target position.
+
+        Raises:
+            TimeoutError: If the mount fails to reach the target within the timeout.
+            Exception: For communication or hardware errors.
         """
         try:
-            self.logger.info(f"Shifting mount by RA: {delta_ra}, Dec: {delta_dec}")
             self.state = MountState.SLEWING
             self._move_task = asyncio.current_task()
 
-            # Convert degrees to encoder steps
-            ra_steps = delta_ra * self.config.encoder['steps_per_deg_ra']
-            dec_steps = delta_dec * self.config.encoder['steps_per_deg_dec']
+            # 1. Get current position (Assuming degrees)
+            current_ra, current_dec = self.get_ra_dec()
 
+            # 2. Robust Cosine Correction
+            # Use abs() because cos(x) == cos(-x), but it's safer for mental logic
+            # Clamp to 89.99 to allow movement near poles without math errors
+            clamped_dec = max(min(abs(current_dec), 89.99), 0.0)
+
+            # Pre-calculate the scale factor.
+            # If Dec is 0, scale is 1.0. If Dec is 60, scale is 2.0.
+            try:
+                secant_dec = 1.0 / math.cos(math.radians(clamped_dec))
+            except ZeroDivisionError:
+                # Fallback for the literal pole
+                secant_dec = 1.0
+
+            delta_ra_corrected = delta_ra * secant_dec
+
+            # 3. Convert degrees to encoder steps
+            # We use the corrected RA but the raw Dec
+            ra_steps = int(delta_ra_corrected * self.config.encoder['steps_per_deg_ra'])
+            dec_steps = int(delta_dec * self.config.encoder['steps_per_deg_dec'])
+
+            # 4. Hardware Communication
             await self._safe_comm(self.comm.shift_mount, ra_steps, dec_steps)
 
+            # 5. Wait for completion
             await self._await_mount_at_position()
+
             self.state = MountState.IDLE
             self.logger.info("Shift completed.")
         except Exception as e:
-            self.logger.error(f"Failed to shift mount: {e}")
+            self.logger.error(f"Failed to shift mount: {e}", exc_info=True)
             self.state = MountState.FAULT
         finally:
             self._move_task = None
@@ -255,7 +296,7 @@ class SchierMount():
             self.state = MountState.TRACKING
 
             # Limit tracking rate to 2 degrees per second to prevent hardware strain
-            MAX_TRACK_RATE = 2.0
+            MAX_TRACK_RATE = 1.0
             if abs(ra_rate) > MAX_TRACK_RATE or abs(dec_rate) > MAX_TRACK_RATE:
                 raise ValueError(f"Tracking rate exceeds maximum limit of {MAX_TRACK_RATE} deg/sec")
 
@@ -271,11 +312,53 @@ class SchierMount():
             self.logger.error(f"Failed to start non-sidereal tracking: {e}")
             raise
 
+    async def update_offsets(self, delta_ra_deg :float, delta_dec_deg : float):
+        """
+        Updates the software-level coordinate offsets.
 
+        Args:
+            delta_ra_deg (float): The offset to apply to Right Ascension in degrees.
+            delta_dec_deg (float): The offset to apply to Declination in degrees.
+        """
+        self.ra_offset_deg = delta_ra_deg
+        self.dec_offset_deg = delta_dec_deg
+        self.logger.info(f"Offsets updated to RA: {delta_ra_deg}, Dec: {delta_dec_deg}")
 
+    async def get_offsets(self) -> tuple[float, float]:
+        """
+        Retrieves the current software-level coordinate offsets.
 
-    def _attempt_recovery(self):
-        pass
+        Returns:
+            tuple[float, float]: A tuple containing (ra_offset_deg, dec_offset_deg).
+        """
+        return self.ra_offset_deg, self.dec_offset_deg
+
+    async def get_ra_dec(self):
+        """
+        Returns the current RA and Dec of the telescope in degrees.
+        Calculated using the current encoder positions and the coordinate module,
+        excluding any software offsets.
+
+        Returns:
+            tuple: (ra_deg, dec_deg) as floats.
+        """
+
+        ra_deg, dec_deg = self.coord.enc_to_radec(
+            self.current_positions["ra_enc"],
+            self.current_positions["dec_enc"]
+        )
+
+        return ra_deg - self.ra_offset_deg, dec_deg - self.dec_offset_deg
+
+    async def _attempt_recovery(self):
+        self.logger.info("Attempting servo and mount recovery...")
+        max_retry_attempts = 3
+        try:
+
+            await self._safe_comm(self.comm.init_mount)
+
+        except Exception as e:
+            self.logger.error(f"Recovery failed after {1} attempts: {e}")
 
     async def _await_encoder_stop(self, tolerance=100, timeout=60):
         """

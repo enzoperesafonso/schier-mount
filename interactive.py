@@ -12,13 +12,18 @@ logging.basicConfig(
 
 async def handle_input(mount):
     print("\n--- SchierMount Terminal Controller ---")
-    print("Commands: init, home, park, stop, pos, exit")
+    print("Commands: init, home, park, stop, pos, exit, slew, track, shift, track_rate, offset, get_offsets, get_coords, help")
 
     while True:
         # Standard input reading in a non-blocking way
         print("Command > ", end='', flush=True)
         line = await asyncio.get_event_loop().run_in_executor(None, sys.stdin.readline)
-        cmd = line.strip().lower()
+        parts = line.strip().lower().split()
+        if not parts:
+            continue
+        cmd = parts[0]
+        args = parts[1:]
+
 
         try:
             if cmd == "init":
@@ -33,8 +38,60 @@ async def handle_input(mount):
                 await mount.stop_mount()
             elif cmd == "pos":
                 p = mount.current_positions
-                print(f"\n[POS] RA: {p['ra_enc']} | DEC: {p['dec_enc']}")
+                ra, dec = await mount.get_ra_dec()
+                print(f"\n[POS] RA Enc: {p['ra_enc']} | DEC Enc: {p['dec_enc']}")
+                print(f"[POS] RA: {ra:.4f} | DEC: {dec:.4f}")
                 print(f"[STATE] {mount.state}\n")
+            elif cmd == "slew":
+                if len(args) == 2:
+                    ra_deg, dec_deg = float(args[0]), float(args[1])
+                    await mount.slew_mount(ra_deg, dec_deg)
+                else:
+                    print("Usage: slew <ra_deg> <dec_deg>")
+            elif cmd == "track":
+                await mount.track_sidereal()
+            elif cmd == "shift":
+                if len(args) == 2:
+                    delta_ra, delta_dec = float(args[0]), float(args[1])
+                    await mount.shift_mount(delta_ra, delta_dec)
+                else:
+                    print("Usage: shift <delta_ra> <delta_dec>")
+            elif cmd == "track_rate":
+                if len(args) == 2:
+                    ra_rate, dec_rate = float(args[0]), float(args[1])
+                    await mount.track_non_sidereal(ra_rate, dec_rate)
+                else:
+                    print("Usage: track_rate <ra_rate> <dec_rate>")
+            elif cmd == "offset":
+                if len(args) == 2:
+                    ra_offset, dec_offset = float(args[0]), float(args[1])
+                    await mount.update_offsets(ra_offset, dec_offset)
+                else:
+                    print("Usage: offset <ra_offset> <dec_offset>")
+            elif cmd == "get_offsets":
+                ra_offset, dec_offset = await mount.get_offsets()
+                print(f"RA Offset: {ra_offset}, Dec Offset: {dec_offset}")
+            elif cmd == "get_coords":
+                ra, dec = await mount.get_ra_dec()
+                print(f"RA: {ra:.4f}, Dec: {dec:.4f}")
+            elif cmd == "help":
+                print("\n--- SchierMount Terminal Controller ---")
+                print("Commands:")
+                print("  init          - Initializes the mount hardware.")
+                print("  home          - Homes the mount.")
+                print("  park          - Parks the mount.")
+                print("  zenith        - Moves the mount to the zenith position.")
+                print("  stop          - Stops all mount movement.")
+                print("  pos           - Shows the current encoder and RA/Dec positions and state.")
+                print("  slew <ra> <dec> - Slews the mount to the given RA and Dec.")
+                print("  track         - Starts sidereal tracking.")
+                print("  shift <dra> <ddec> - Shifts the mount by a relative amount.")
+                print("  track_rate <rar> <decr> - Starts tracking at a custom rate.")
+                print("  offset <rao> <deco> - Sets the RA and Dec offsets.")
+                print("  get_offsets   - Gets the current RA and Dec offsets.")
+                print("  get_coords    - Gets the current RA and Dec.")
+                print("  exit          - Stops the mount and exits the program.")
+
             elif cmd == "exit":
                 await mount.stop_mount()
                 break
