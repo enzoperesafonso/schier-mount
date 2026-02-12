@@ -5,7 +5,7 @@ from astropy import units as u
 import numpy as np
 
 
-class SchierMountCoordinates:
+class MountCoordinates:
     def __init__(self, config):
         self.config = config
         self.logger = logging.getLogger("SchierMount.Coords")
