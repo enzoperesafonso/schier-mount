@@ -4,6 +4,11 @@ import os
 
 
 class MountConfig:
+    """
+    Configuration management class for the Schier Mount of ROTSE-IIIc.
+    Handles site location, encoder settings, movement limits, speeds,
+    and parking positions.
+    """
     def __init__(self):
         """
         Args:
@@ -47,12 +52,17 @@ class MountConfig:
 
         self.park = {'ra': -95.0, 'dec': 35.0}
 
-        self.standby = {'ra': -95.0, 'dec': 90.0 + 23.2716}
+        self.standby = {'ra': -95.0, 'dec': 174.0}
 
 
     def update_zero_points(self, ra_counts, dec_counts):
-        """Updates zero points in memory (runtime)."""
+        """
+        Updates the encoder zero points in the current configuration instance.
+
+        Args:
+            ra_counts (int/float): The raw encoder count value for the Right Ascension zero point.
+            dec_counts (int/float): The raw encoder count value for the Declination zero point.
+        """
         self.encoder['zeropt_ra'] = int(ra_counts)
         self.encoder['zeropt_dec'] = int(dec_counts)
         self.logger.debug(f"Runtime Config Update: Zero Points set to RA={ra_counts}, Dec={dec_counts}")
-
