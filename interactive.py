@@ -9,6 +9,23 @@ logging.basicConfig(
     format='%(asctime)s [%(levelname)s] %(message)s'
 )
 
+def dec_to_dms(dec):
+    sign = '+' if dec >= 0 else '-'
+    dec = abs(dec)
+    d = int(dec)
+    m_total = (dec - d) * 60
+    m = int(m_total)
+    s = (m_total - m) * 60
+    return f"{sign}{d:02d}°{m:02d}'{s:04.1f}\""
+
+def ra_to_hms(ra):
+    h_total = ra / 15.0
+    h = int(h_total)
+    m_total = (h_total - h) * 60
+    m = int(m_total)
+    s = (m_total - m) * 60
+    return f"{h:02d}h{m:02d}m{s:04.1f}s"
+
 
 async def handle_input(mount):
     print("\n--- SchierMount Terminal Controller ---")
@@ -40,7 +57,7 @@ async def handle_input(mount):
                 p = mount.current_positions
                 ra, dec = await mount.get_ra_dec()
                 print(f"\n[POS] RA Enc: {p['ra_enc']} | DEC Enc: {p['dec_enc']}")
-                print(f"[POS] RA: {ra:.4f} | DEC: {dec:.4f}")
+                print(f"[POS] RA: {ra:.4f} ({ra_to_hms(ra)}) | DEC: {dec:.4f} ({dec_to_dms(dec)})")
                 print(f"[STATE] {mount.state}\n")
             elif cmd == "slew":
                 if len(args) == 2:
@@ -73,7 +90,8 @@ async def handle_input(mount):
                 print(f"RA Offset: {ra_offset}, Dec Offset: {dec_offset}")
             elif cmd == "get_coords":
                 ra, dec = await mount.get_ra_dec()
-                print(f"RA: {ra:.4f}, Dec: {dec:.4f}")
+                print(f"RA: {ra:.4f} ({ra_to_hms(ra)})")
+                print(f"Dec: {dec:.4f} ({dec_to_dms(dec)})")
             elif cmd == "help":
                 print("\n--- SchierMount Terminal Controller ---")
                 print("Commands:")

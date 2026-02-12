@@ -187,7 +187,51 @@ class SchierMount():
             self._move_task = None
 
     async def slew_mount(self, ra_deg : float, dec_deg : float ):
-        pass
+        """
+        Slews the mount to the specified RA and Dec coordinates.
+
+        Args:
+            ra_deg (float): Target Right Ascension in degrees.
+            dec_deg (float): Target Declination in degrees.
+
+        Steps:
+            1. Applies software offsets to the target coordinates.
+            2. Converts the target RA/Dec to encoder steps.
+            3. Commands the hardware to slew to the target encoder positions.
+            4. Monitors the movement until the target is reached.
+
+        Raises:
+            TimeoutError: If the mount fails to reach the target within the timeout.
+            Exception: For communication or hardware errors.
+        """
+        try:
+            self.logger.info(f"Slewing to RA: {ra_deg}, Dec: {dec_deg}...")
+            self.state = MountState.SLEWING
+            self._move_task = asyncio.current_task()
+
+            # 1. Apply software offsets
+            target_ra = ra_deg + self.ra_offset_deg
+            target_dec = dec_deg + self.dec_offset_deg
+
+            # 2. Convert to encoder steps
+            ra_steps, dec_steps = self.coord.radec_to_enc(target_ra, target_dec)
+
+            # 3. Send hardware command
+            await self._safe_comm(self.comm.slew_mount, int(ra_steps), int(dec_steps))
+
+            # 4. Wait for completion
+            await self._await_mount_at_position()
+
+            self.state = MountState.IDLE
+            self.logger.info("Slew completed successfully.")
+
+        except Exception as e:
+            self.logger.error(f"Slew failed: {e}")
+            self.state = MountState.FAULT
+            raise
+        finally:
+            self._move_task = None
+
 
     async def track_sidereal(self):
         """
