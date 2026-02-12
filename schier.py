@@ -386,7 +386,7 @@ class SchierMount():
             tuple: (ra_deg, dec_deg) as floats.
         """
 
-        pass
+        return self.coord.enc_to_radec(self.current_positions['ra_enc'], self.current_positions['dec_enc'])
 
     async def _attempt_recovery(self):
         self.logger.info("Attempting servo and mount recovery...")
