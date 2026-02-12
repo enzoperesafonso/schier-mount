@@ -232,7 +232,6 @@ class SchierMount():
         finally:
             self._move_task = None
 
-
     async def track_sidereal(self):
         """
         Starts sidereal tracking on the RA axis.
