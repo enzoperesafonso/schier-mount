@@ -482,4 +482,4 @@ class SchierMount():
             except Exception as e:
                 self.logger.error(f"Status Loop Error: {e}")
 
-            await asyncio.sleep(0.1)
+            await asyncio.sleep(0.01)
