@@ -452,7 +452,7 @@ class SchierMount():
             if ra_diff <= tolerance and dec_diff <= tolerance:
                 return
 
-            await asyncio.sleep(0.2)
+            await asyncio.sleep(0.01)
 
         raise TimeoutError(f"Mount failed to reach target position within {timeout}s ")
 
