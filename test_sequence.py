@@ -49,6 +49,14 @@ async def run_test_sequence():
         await mount.standby_mount()
         logging.info("Mount sent to standby position successfully.")
 
+        logging.info("Sending mount to park position...")
+        await mount.park_mount()
+        logging.info("Mount sent to standby park successfully.")
+
+        logging.info("Sending mount to standby position...")
+        await mount.standby_mount()
+        logging.info("Mount sent to standby position successfully.")
+
     except Exception as e:
         logging.error(f"Test sequence failed: {e}")
     finally:
