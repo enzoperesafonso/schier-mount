@@ -178,6 +178,7 @@ class SchierMount():
 
             self.logger.debug("Standby command sent, waiting for encoders to reach target...")
             #await self._await_encoder_stop(tolerance=100, timeout=120)
+
             await self._await_mount_at_position()
 
             self.state = MountState.IDLE
