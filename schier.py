@@ -143,7 +143,8 @@ class SchierMount():
             await self._safe_comm(self.comm.park_mount)
 
             self.logger.debug("Parking command sent, waiting for encoders to reach target...")
-            await self._await_encoder_stop(tolerance=100, timeout=120)
+            #await self._await_encoder_stop(tolerance=100, timeout=120)
+            await self._await_mount_at_position()
 
             self.state = MountState.PARKED
             self.logger.info("Homing sequence completed successfully.")
@@ -176,7 +177,8 @@ class SchierMount():
             await self._safe_comm(self.comm.standby_mount)
 
             self.logger.debug("Standby command sent, waiting for encoders to reach target...")
-            await self._await_encoder_stop(tolerance=100, timeout=120)
+            #await self._await_encoder_stop(tolerance=100, timeout=120)
+            await self._await_mount_at_position()
 
             self.state = MountState.IDLE
             self.logger.info("Mount moved to standby pos.")
