@@ -85,7 +85,7 @@ class MountComm:
 
             # check if we do not have any error status bits after stopping amps, if so we cannot run!
             if self.get_axis_status_bits(0)['any_error'] or self.get_axis_status_bits(1)['any_error']:
-                raise MountError()
+                raise MountError("Axis status error detected")
 
             time.sleep(0.5)
 
@@ -162,7 +162,7 @@ class MountComm:
 
             # check if we do not have any error status bits, if so we cannot home!
             if self.get_axis_status_bits(0)['any_error'] or self.get_axis_status_bits(1)['any_error']:
-                raise MountError()
+                raise MountError("Cannot home: Axis status error detected")
 
             self._send_command("VelRa", self.config.speeds['home_ra'])
             self._send_command("VelDec", self.config.speeds['home_dec'])
@@ -194,7 +194,7 @@ class MountComm:
 
             # check if we do not have any error status bits after stopping amps, if so we cannot run!
             if self.get_axis_status_bits(0)['any_error'] or self.get_axis_status_bits(1)['any_error']:
-                raise MountError()
+                raise MountError("Axis status error detected")
 
             self._send_command("RunRA")
             self._send_command("RunDec")
@@ -439,17 +439,20 @@ class MountComm:
                 self._send_command("VelDec", 0)
 
             # check if ra is (as Rykoff puts it) kosher ...
-            if (ra_enc > (self.config.limits['ra_max'] * self.config.encoder['steps_per_deg_ra'] + self.config.encoder[
-                'zeropt_ra']) or ra_enc < self.config.limits['ra_min'] * self.config.encoder['steps_per_deg_ra'] +
-                    self.config.encoder['zeropt_ra']):
-                raise MountSafetyError()
+            ra_max_limit = self.config.limits['ra_max'] * self.config.encoder['steps_per_deg_ra'] + self.config.encoder['zeropt_ra']
+            ra_min_limit = self.config.limits['ra_min'] * self.config.encoder['steps_per_deg_ra'] + self.config.encoder['zeropt_ra']
+            if ra_enc > ra_max_limit or ra_enc < ra_min_limit:
+                msg = f"RA target {ra_enc} is out of software limits: [{ra_min_limit}, {ra_max_limit}]"
+                self.logger.error(msg)
+                raise MountSafetyError(msg)
 
             # now if dec is too ...
-            if (dec_enc > (
-                    self.config.limits['dec_max'] * self.config.encoder['steps_per_deg_dec'] + self.config.encoder[
-                'zeropt_dec']) or dec_enc < self.config.limits['dec_min'] * self.config.encoder['steps_per_deg_dec'] +
-                    self.config.encoder['zeropt_dec']):
-                raise MountSafetyError()
+            dec_max_limit = self.config.limits['dec_max'] * self.config.encoder['steps_per_deg_dec'] + self.config.encoder['zeropt_dec']
+            dec_min_limit = self.config.limits['dec_min'] * self.config.encoder['steps_per_deg_dec'] + self.config.encoder['zeropt_dec']
+            if dec_enc > dec_max_limit or dec_enc < dec_min_limit:
+                msg = f"Dec target {dec_enc} is out of software limits: [{dec_min_limit}, {dec_max_limit}]"
+                self.logger.error(msg)
+                raise MountSafetyError(msg)
 
             # set the positions ...
             self._send_command("PosRA", ra_enc)
@@ -541,6 +544,10 @@ class MountComm:
         # Ensures we didn't get a 'Dec' response to an 'RA' command.
         # This prevents mix-ups if the serial buffer got out of sync.
 
+        if body.startswith('!'):
+            self.logger.error(f"Mount Error Response: {body}")
+            return False
+
         # Check RA Axis
         if "RA" in sent_command and "RA" not in body:
             self.logger.error(
@@ -573,18 +580,18 @@ class MountComm:
             MountConnectionError: If the command fails after all retries.
         """
 
-        # --- 1. Construct the Packet ---
-        # Format: "$Key, Value" or "$Key"
+        # Final packet: "$Cmd, Val <CRC>\r"
+        # Format: "$Key, Value " or "$Key "
         if value is not None:
-            raw_cmd = f"${cmd_key}, {value}"
+            raw_cmd = f"${cmd_key}, {value} "
         else:
-            raw_cmd = f"${cmd_key}"
+            raw_cmd = f"${cmd_key} "
 
         # Calculate CRC (using the external function)
-        # Note: We calculate CRC on the body "$Cmd, Val"
+        # Note: We calculate CRC on the body "$Cmd, Val "
         crc_hex = crc.calculate_crc(raw_cmd)
 
-        # Final packet: "$Cmd, Val<CRC>\r"
+        # Final packet: "$Cmd, Val <CRC>\r"
         # The ROTSE protocol appends CRC directly to the end, then CR.
         final_packet_str = f"{raw_cmd}{crc_hex}\r"
         final_packet_bytes = final_packet_str.encode('ascii')

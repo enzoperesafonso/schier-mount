@@ -55,6 +55,8 @@ class MountConfig:
         self.standby = {'ra': -95.0, 'dec': 174.0}
 
 
+
+
     def update_zero_points(self, ra_counts, dec_counts):
         """
         Updates the encoder zero points in the current configuration instance.

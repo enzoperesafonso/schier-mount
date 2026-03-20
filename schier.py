@@ -39,7 +39,7 @@ class SchierMount():
         self.dec_offset_deg = 0.0
 
         self.config = MountConfig()
-        self.coord = MountCoordinates(config=MountConfig())
+        self.coord = MountCoordinates(config=self.config)
         self.comm = MountComm(config=self.config)
 
         self.state = MountState.UNKNOWN
@@ -217,7 +217,7 @@ class SchierMount():
             ra_steps, dec_steps = self.coord.radec_to_enc(target_ra, target_dec)
 
             # 3. Send hardware command
-            print('made it to send ... ')
+            self.logger.info(f"Slew Command: target RA={target_ra:.4f} ({int(ra_steps)} enc), target Dec={target_dec:.4f} ({int(dec_steps)} enc)")
             await self._safe_comm(self.comm.slew_mount, int(ra_steps), int(dec_steps))
 
             # 4. Wait for completion
