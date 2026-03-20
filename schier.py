@@ -217,6 +217,7 @@ class SchierMount():
             ra_steps, dec_steps = self.coord.radec_to_enc(target_ra, target_dec)
 
             # 3. Send hardware command
+            print('made it to send ... ')
             await self._safe_comm(self.comm.slew_mount, int(ra_steps), int(dec_steps))
 
             # 4. Wait for completion
