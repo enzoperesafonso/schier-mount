@@ -31,8 +31,8 @@ class SchierMount():
         self.serial_lock = asyncio.Lock()
 
         self.current_positions = {
-            "ra_enc": 0, "ra_target_enc": 0,
-            "dec_enc": 0, "dec_target_enc": 0,
+            "ra_enc": 0,
+            "dec_enc": 0,
         }
 
         self.ra_offset_deg = 0.0
@@ -416,6 +416,7 @@ class SchierMount():
     async def _await_mount_at_position(self, timeout=180, tolerance=100):
         """
         Wait until current encoder positions match target positions within tolerance.
+        Uses the intended targets directly from the comm module.
 
         Args:
             timeout (int): Maximum time in seconds to wait for the mount to reach the target.
@@ -429,11 +430,8 @@ class SchierMount():
 
         while (asyncio.get_event_loop().time() - start_time) < timeout:
 
-            ra_target = self.comm.ra_target_enc
-            dec_target = self.comm.dec_target_enc
-
-            ra_diff = abs(self.current_positions["ra_enc"] - ra_target)
-            dec_diff = abs(self.current_positions["dec_enc"] - dec_target)
+            ra_diff = abs(self.current_positions["ra_enc"] - self.comm.ra_target_enc)
+            dec_diff = abs(self.current_positions["dec_enc"] - self.comm.dec_target_enc)
 
             if ra_diff <= tolerance and dec_diff <= tolerance:
                 return
@@ -451,15 +449,15 @@ class SchierMount():
         while True:
             try:
 
-                ra_target, ra_actual = await self._safe_comm(self.comm.get_encoder_position, 0)
-                dec_target, dec_actual = await self._safe_comm(self.comm.get_encoder_position, 1)
+                _, ra_actual = await self._safe_comm(self.comm.get_encoder_position, 0)
+                _, dec_actual = await self._safe_comm(self.comm.get_encoder_position, 1)
 
                 ra_axis_status = await self._safe_comm(self.comm.get_axis_status_bits, 0)
                 dec_axis_status = await self._safe_comm(self.comm.get_axis_status_bits, 1)
 
                 self.current_positions = {
-                    "ra_enc": ra_actual, "ra_target_enc": ra_target,
-                    "dec_enc": dec_actual, "dec_target_enc": dec_target,
+                    "ra_enc": ra_actual,
+                    "dec_enc": dec_actual,
                 }
 
                 if ra_axis_status['any_error'] or dec_axis_status['any_error']:
