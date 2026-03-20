@@ -679,7 +679,8 @@ class MountComm:
             body = response[:-4].strip()
 
             # 2. Split using Regex
-            # This handles the specific format: Space-Number-Comma-Space-Number
+            # This handles the specific format: Space-Numbe
+            # r-Comma-Space-Number
             import re
             tokens = re.split(r'[ ,]+', body)
 
@@ -692,9 +693,7 @@ class MountComm:
             # 3. Parse Numbers
             # We MUST use float() first because the log showed '.0' in the string.
             # int('100.0') crashes Python, but int(float('100.0')) works.
-            # tokens[1] is the target/commanded position from the mount
-            # tokens[2] is the actual position from the mount
-            target_pos = int(float(tokens[1]))
+            target_pos = target
             actual_pos = int(float(tokens[2]))
 
             return target_pos, actual_pos

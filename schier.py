@@ -428,8 +428,12 @@ class SchierMount():
         start_time = asyncio.get_event_loop().time()
 
         while (asyncio.get_event_loop().time() - start_time) < timeout:
-            ra_diff = abs(self.current_positions["ra_enc"] - self.current_positions["ra_target_enc"])
-            dec_diff = abs(self.current_positions["dec_enc"] - self.current_positions["dec_target_enc"])
+
+            ra_target = self.comm.ra_target_enc
+            dec_target = self.comm.dec_target_enc
+
+            ra_diff = abs(self.current_positions["ra_enc"] - ra_target)
+            dec_diff = abs(self.current_positions["dec_enc"] - dec_target)
 
             if ra_diff <= tolerance and dec_diff <= tolerance:
                 return
