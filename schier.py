@@ -285,27 +285,8 @@ class SchierMount():
             self.state = MountState.SLEWING
             self._move_task = asyncio.current_task()
 
-            # 1. Get current position (Assuming degrees)
-            current_ra, current_dec = self.get_ra_dec()
 
-            # 2. Robust Cosine Correction
-            # Use abs() because cos(x) == cos(-x), but it's safer for mental logic
-            # Clamp to 89.99 to allow movement near poles without math errors
-            clamped_dec = max(min(abs(current_dec), 89.99), 0.0)
-
-            # Pre-calculate the scale factor.
-            # If Dec is 0, scale is 1.0. If Dec is 60, scale is 2.0.
-            try:
-                secant_dec = 1.0 / math.cos(math.radians(clamped_dec))
-            except ZeroDivisionError:
-                # Fallback for the literal pole
-                secant_dec = 1.0
-
-            delta_ra_corrected = delta_ra * secant_dec
-
-            # 3. Convert degrees to encoder steps
-            # We use the corrected RA but the raw Dec
-            ra_steps = int(delta_ra_corrected * self.config.encoder['steps_per_deg_ra'])
+            ra_steps = int(delta_ra* self.config.encoder['steps_per_deg_ra'])
             dec_steps = int(delta_dec * self.config.encoder['steps_per_deg_dec'])
 
             # 4. Hardware Communication
@@ -339,7 +320,7 @@ class SchierMount():
             self.state = MountState.TRACKING
 
             # Limit tracking rate to 2 degrees per second to prevent hardware strain
-            MAX_TRACK_RATE = 1.0
+            MAX_TRACK_RATE = 5.0
             if abs(ra_rate) > MAX_TRACK_RATE or abs(dec_rate) > MAX_TRACK_RATE:
                 raise ValueError(f"Tracking rate exceeds maximum limit of {MAX_TRACK_RATE} deg/sec")
 
@@ -386,7 +367,7 @@ class SchierMount():
             tuple: (ra_deg, dec_deg) as floats.
         """
 
-        return self.coord.enc_to_radec(self.current_positions['ra_enc'], self.current_positions['dec_enc'])
+        return 1,1
 
     async def _attempt_recovery(self):
         self.logger.info("Attempting servo and mount recovery...")
