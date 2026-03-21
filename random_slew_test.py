@@ -37,11 +37,11 @@ async def run_random_slews(n_points, output_csv="slew_results.csv"):
     # Mechanical Dec range: [-210, 30] (effectively limited by horizon)
     
     csv_header = [
-        "target_ha", "target_dec", "start_time", "end_time", 
+        "start_ha", "start_dec", "target_ha", "target_dec", "start_time", "end_time", 
         "slew_duration", "status", "error_msg", "final_ha", "final_dec"
     ]
     
-    # Open CSV and write header if new
+    # Open CSV and write header
     with open(output_csv, 'w', newline='') as f:
         writer = csv.writer(f)
         writer.writerow(csv_header)
@@ -57,9 +57,12 @@ async def run_random_slews(n_points, output_csv="slew_results.csv"):
         
         pointings_completed = 0
         while pointings_completed < n_points:
+            # Get starting coordinates
+            start_ha, start_dec = await mount.get_ha_dec()
+
             # Generate random HA/Dec within range
-            target_ha = random.uniform(-85.0, 85.0)
-            target_dec = random.uniform(-90.0, 10.0)
+            target_ha = random.uniform(-90.0, 90.0)
+            target_dec = random.uniform(-90.0, 30.0)
             
             # Check horizon
             if not is_above_horizon(target_ha, target_dec, lat):
@@ -86,7 +89,7 @@ async def run_random_slews(n_points, output_csv="slew_results.csv"):
                 logging.error(f"Slew failed: {e}")
                 
                 # Check if we need to recover
-                if mount.state == mount.state.FAULT or "FAULT" in error_msg:
+                if mount.state.name == "FAULT" or "FAULT" in error_msg:
                     logging.warning("Fault detected! Attempting recovery (re-homing)...")
                     try:
                         # Attempt to rehome
@@ -98,6 +101,7 @@ async def run_random_slews(n_points, output_csv="slew_results.csv"):
                         with open(output_csv, 'a', newline='') as f:
                             writer = csv.writer(f)
                             writer.writerow([
+                                f"{start_ha:.4f}", f"{start_dec:.4f}",
                                 f"{target_ha:.4f}", f"{target_dec:.4f}", start_time_str, time.strftime('%Y-%m-%d %H:%M:%S'),
                                 f"{slew_duration:.2f}", "CRITICAL_FAULT", f"Recovery failed: {recovery_error}", "NaN", "NaN"
                             ])
@@ -111,6 +115,7 @@ async def run_random_slews(n_points, output_csv="slew_results.csv"):
             with open(output_csv, 'a', newline='') as f:
                 writer = csv.writer(f)
                 writer.writerow([
+                    f"{start_ha:.4f}", f"{start_dec:.4f}",
                     f"{target_ha:.4f}", f"{target_dec:.4f}", start_time_str, end_time_str,
                     f"{slew_duration:.2f}", status, error_msg, f"{final_ha:.4f}", f"{final_dec:.4f}"
                 ])
@@ -121,6 +126,14 @@ async def run_random_slews(n_points, output_csv="slew_results.csv"):
     except Exception as e:
         logging.critical(f"Critical error in test sequence: {e}")
     finally:
+        try:
+            # Only attempt to park if we are not in a hard fault state
+            if mount.state.name != "FAULT":
+                logging.info("Parking mount...")
+                await mount.park_mount()
+        except Exception as e:
+            logging.error(f"Failed to park mount at end of test: {e}")
+            
         await mount.stop_mount()
         logging.info("Test sequence finished.")
 
