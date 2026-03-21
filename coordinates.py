@@ -16,11 +16,6 @@ class MountCoordinates:
             height=self.config.location['elevation'] * u.m
         )
         self.j2000_frame = FK5(equinox='J2000')
-
-    def get_lst(self):
-        now = Time.now()
-        return now.sidereal_time('mean', longitude=self.location.lon).deg
-
     def hadec_to_enc(self, ha_deg: float, dec_deg: float) -> tuple[int, int]:
         """
         Converts Hour Angle (HA) and Declination (Dec) to encoder counts.
