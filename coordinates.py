@@ -24,7 +24,7 @@ class MountCoordinates:
     def hadec_to_enc(self, ha_deg: float, dec_deg: float) -> tuple[int, int]:
         """
         Converts Hour Angle (HA) and Declination (Dec) to encoder counts.
-        Handles below-pole pointing logic and mechanical limits.
+        Handles below-pole pointing logic asnd mechanical limits.
         
         Mechanical mapping:
         - RA center (-92.5) = HA 0
