@@ -84,6 +84,24 @@ async def run_random_slews(n_points, output_csv="slew_results.csv"):
                 end_ts = time.time()
                 slew_duration = end_ts - start_ts
                 logging.error(f"Slew failed: {e}")
+                
+                # Check if we need to recover
+                if mount.state == mount.state.FAULT or "FAULT" in error_msg:
+                    logging.warning("Fault detected! Attempting recovery (re-homing)...")
+                    try:
+                        # Attempt to rehome
+                        await mount.home_mount()
+                        logging.info("Recovery successful. Continuing test sequence.")
+                    except Exception as recovery_error:
+                        logging.critical(f"RECOVERY FAILED: {recovery_error}. Aborting test sequence.")
+                        # Log the final failure before exiting
+                        with open(output_csv, 'a', newline='') as f:
+                            writer = csv.writer(f)
+                            writer.writerow([
+                                f"{target_ha:.4f}", f"{target_dec:.4f}", start_time_str, time.strftime('%Y-%m-%d %H:%M:%S'),
+                                f"{slew_duration:.2f}", "CRITICAL_FAULT", f"Recovery failed: {recovery_error}", "NaN", "NaN"
+                            ])
+                        break # Break the while loop to stop tests
             
             # Get final coordinates
             final_ha, final_dec = await mount.get_ha_dec()
