@@ -224,7 +224,7 @@ class SchierMount():
             await self._safe_comm(self.comm.slew_mount, int(ra_steps), int(dec_steps))
 
             # 4. Wait for completion
-            await self._await_mount_at_position()
+            await self._await_mount_at_position(timeout=120)
 
             self.state = MountState.IDLE
             self.logger.info("Slew completed successfully.")

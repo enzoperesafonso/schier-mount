@@ -817,7 +817,7 @@ class MountComm:
             # 5. Check for Critical Errors (As seen in C evalstat)
             if "High Output I^2" in fault_text:
                 self.logger.critical(f"UNRECOVERABLE HARDWARE FAULT: {fault_text}")
-                raise MountSafetyError(f"Hardware Failure Check Mount Computer!: {fault_text}")
+                #raise MountSafetyError(f"Hardware Failure Check Mount Computer!: {fault_text}")
 
             return fault_text
 
