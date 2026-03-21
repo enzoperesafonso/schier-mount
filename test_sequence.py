@@ -13,20 +13,21 @@ def dec_to_dms(dec):
     s = (m_total - m) * 60
     return f"{sign}{d:02d}°{m:02d}'{s:04.1f}"
 
-def ra_to_hms(ra):
-    h_total = ra / 15.0
+def ha_to_hms(ha):
+    h_total = ha / 15.0
     h = int(h_total)
-    m_total = (h_total - h) * 60
+    m_total = abs(h_total - h) * 60
     m = int(m_total)
     s = (m_total - m) * 60
-    return f"{h:02d}h{m:02d}m{s:04.1f}s"
+    sign = '' if h_total >= 0 else '-'
+    return f"{sign}{abs(h):02d}h{m:02d}m{s:04.1f}s"
 
 async def monitor_status(mount):
     """Continuously prints mount status."""
     while True:
         p = mount.current_positions
-        ra, dec = await mount.get_ra_dec()
-        logging.info(f"  [STATUS] State: {mount.state} | RA Enc: {p['ra_enc']} | DEC Enc: {p['dec_enc']} | RA: {ra:.4f} | Dec: {dec:.4f}")
+        ha, dec = await mount.get_ha_dec()
+        logging.info(f"  [STATUS] State: {mount.state} | RA Enc: {p['ra_enc']} | DEC Enc: {p['dec_enc']} | HA: {ha:.4f} | Dec: {dec:.4f}")
         await asyncio.sleep(0.1)
 
 

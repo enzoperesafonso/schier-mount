@@ -18,13 +18,14 @@ def dec_to_dms(dec):
     s = (m_total - m) * 60
     return f"{sign}{d:02d}°{m:02d}'{s:04.1f}\""
 
-def ra_to_hms(ra):
-    h_total = ra / 15.0
+def ha_to_hms(ha):
+    h_total = ha / 15.0
     h = int(h_total)
-    m_total = (h_total - h) * 60
+    m_total = abs(h_total - h) * 60
     m = int(m_total)
     s = (m_total - m) * 60
-    return f"{h:02d}h{m:02d}m{s:04.1f}s"
+    sign = '' if h_total >= 0 else '-'
+    return f"{sign}{abs(h):02d}h{m:02d}m{s:04.1f}s"
 
 
 async def handle_input(mount):
@@ -55,42 +56,42 @@ async def handle_input(mount):
                 await mount.stop_mount()
             elif cmd == "pos":
                 p = mount.current_positions
-                ra, dec = await mount.get_ra_dec()
+                ha, dec = await mount.get_ha_dec()
                 print(f"\n[POS] RA Enc: {p['ra_enc']} | DEC Enc: {p['dec_enc']}")
-                print(f"[POS] RA: {ra:.4f} ({ra_to_hms(ra)}) | DEC: {dec:.4f} ({dec_to_dms(dec)})")
+                print(f"[POS] HA: {ha:.4f} ({ha_to_hms(ha)}) | DEC: {dec:.4f} ({dec_to_dms(dec)})")
                 print(f"[STATE] {mount.state}\n")
             elif cmd == "slew":
                 if len(args) == 2:
-                    ra_deg, dec_deg = float(args[0]), float(args[1])
-                    await mount.slew_mount(ra_deg, dec_deg)
+                    ha_deg, dec_deg = float(args[0]), float(args[1])
+                    await mount.slew_mount(ha_deg, dec_deg)
                 else:
-                    print("Usage: slew <ra_deg> <dec_deg>")
+                    print("Usage: slew <ha_deg> <dec_deg>")
             elif cmd == "track":
                 await mount.track_sidereal()
             elif cmd == "shift":
                 if len(args) == 2:
-                    delta_ra, delta_dec = float(args[0]), float(args[1])
-                    await mount.shift_mount(delta_ra, delta_dec)
+                    delta_ha, delta_dec = float(args[0]), float(args[1])
+                    await mount.shift_mount(delta_ha, delta_dec)
                 else:
-                    print("Usage: shift <delta_ra> <delta_dec>")
+                    print("Usage: shift <delta_ha> <delta_dec>")
             elif cmd == "track_rate":
                 if len(args) == 2:
-                    ra_rate, dec_rate = float(args[0]), float(args[1])
-                    await mount.track_non_sidereal(ra_rate, dec_rate)
+                    ha_rate, dec_rate = float(args[0]), float(args[1])
+                    await mount.track_non_sidereal(ha_rate, dec_rate)
                 else:
-                    print("Usage: track_rate <ra_rate> <dec_rate>")
+                    print("Usage: track_rate <ha_rate> <dec_rate>")
             elif cmd == "offset":
                 if len(args) == 2:
-                    ra_offset, dec_offset = float(args[0]), float(args[1])
-                    await mount.update_offsets(ra_offset, dec_offset)
+                    ha_offset, dec_offset = float(args[0]), float(args[1])
+                    await mount.update_offsets(ha_offset, dec_offset)
                 else:
-                    print("Usage: offset <ra_offset> <dec_offset>")
+                    print("Usage: offset <ha_offset> <dec_offset>")
             elif cmd == "get_offsets":
-                ra_offset, dec_offset = await mount.get_offsets()
-                print(f"RA Offset: {ra_offset}, Dec Offset: {dec_offset}")
+                ha_offset, dec_offset = await mount.get_offsets()
+                print(f"HA Offset: {ha_offset}, Dec Offset: {dec_offset}")
             elif cmd == "get_coords":
-                ra, dec = await mount.get_ra_dec()
-                print(f"RA: {ra:.4f} ({ra_to_hms(ra)})")
+                ha, dec = await mount.get_ha_dec()
+                print(f"HA: {ha:.4f} ({ha_to_hms(ha)})")
                 print(f"Dec: {dec:.4f} ({dec_to_dms(dec)})")
             elif cmd == "help":
                 print("\n--- SchierMount Terminal Controller ---")
@@ -100,14 +101,14 @@ async def handle_input(mount):
                 print("  park          - Parks the mount.")
                 print("  zenith        - Moves the mount to the zenith position.")
                 print("  stop          - Stops all mount movement.")
-                print("  pos           - Shows the current encoder and RA/Dec positions and state.")
-                print("  slew <ra> <dec> - Slews the mount to the given RA and Dec.")
+                print("  pos           - Shows the current encoder and HA/Dec positions and state.")
+                print("  slew <ha> <dec> - Slews the mount to the given HA and Dec.")
                 print("  track         - Starts sidereal tracking.")
-                print("  shift <dra> <ddec> - Shifts the mount by a relative amount.")
-                print("  track_rate <rar> <decr> - Starts tracking at a custom rate.")
-                print("  offset <rao> <deco> - Sets the RA and Dec offsets.")
-                print("  get_offsets   - Gets the current RA and Dec offsets.")
-                print("  get_coords    - Gets the current RA and Dec.")
+                print("  shift <dha> <ddec> - Shifts the mount by a relative amount.")
+                print("  track_rate <har> <decr> - Starts tracking at a custom rate.")
+                print("  offset <hao> <deco> - Sets the HA and Dec offsets.")
+                print("  get_offsets   - Gets the current HA and Dec offsets.")
+                print("  get_coords    - Gets the current HA and Dec.")
                 print("  exit          - Stops the mount and exits the program.")
 
             elif cmd == "exit":

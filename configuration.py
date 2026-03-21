@@ -11,25 +11,36 @@ class MountConfig:
     """
     def __init__(self):
         """
-        Args:
-            config_source:
-                - None: Use internal hardcoded defaults only.
-                - dict: Apply dictionary overrides to defaults.
-                - str: Load YAML file from path and apply to defaults.
+        Initializes the MountConfig with default parameters for the Schier Mount.
+
+        Attributes:
+            location (dict): Geographic coordinates (lat, lon, elevation) of the HESS site.
+            encoder (dict): Encoder scaling factors (steps per degree), zero points, and tolerances.
+            limits (dict): Minimum and maximum allowable movement ranges for RA and Dec.
+            speeds (dict): Velocity settings for different movement modes (slew, fine, home, max).
+            acceleration (dict): Acceleration profiles for RA and Dec axes.
+            park (dict): Default parking coordinates.
+            standby (dict): Default standby coordinates.
+
+        Note:
+            The configuration values are derived from the legacy Schierd config
+            (Don Smith & E. Rykoff 2005) and are calibrated for the ROTSE-IIIc
+            hardware specifications... Please no touchy-touchy without asking enzo!
+
+        Returns:
+            None
         """
         self.logger = logging.getLogger("MountConfig")
-
-        # Configuration file for custom Schier Mount of ROTSE-IIIc. These values are taken directly from the legacy Schierd config of the
-        # original rotsed ocs system (Don Smith & E. Rykoff 2005) and should NOT be changed!
 
         # HESS Site
         self.location = {'latitude': -23.2716, 'longitude': 16.5, 'elevation': 1800}
 
         self.encoder = {
+
             'steps_per_deg_ra': 24382.0,
             'steps_per_deg_dec': 19395.0,
-            'zeropt_ra': 0,
 
+            'zeropt_ra': 0,
             'zeropt_dec': 0,
             'tolerance': 50
         }
@@ -43,7 +54,7 @@ class MountConfig:
             'slew_ra': 5.0, 'slew_dec': 5.0,
             'fine_ra': 0.5, 'fine_dec': 0.5,
             'home_ra': 2.0, 'home_dec': 2.0,
-            'max_ra': 35.0, 'max_dec':  35.0
+            'max_ra': 30.0, 'max_dec':  30.0
         }
 
         self.acceleration = {
@@ -53,7 +64,6 @@ class MountConfig:
         self.park = {'ra': -95.0, 'dec': 90.0}
 
         self.standby = {'ra': -95.0, 'dec': 174.0}
-
 
 
 

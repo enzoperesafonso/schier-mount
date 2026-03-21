@@ -35,7 +35,7 @@ class SchierMount():
             "dec_enc": 0,
         }
 
-        self.ra_offset_deg = 0.0
+        self.ha_offset_deg = 0.0
         self.dec_offset_deg = 0.0
 
         self.config = MountConfig()
@@ -189,17 +189,17 @@ class SchierMount():
         finally:
             self._move_task = None
 
-    async def slew_mount(self, ra_deg : float, dec_deg : float ):
+    async def slew_mount(self, ha_deg : float, dec_deg : float ):
         """
-        Slews the mount to the specified RA and Dec coordinates.
+        Slews the mount to the specified HA and Dec coordinates.
 
         Args:
-            ra_deg (float): Target Right Ascension in degrees.
+            ha_deg (float): Target Hour Angle in degrees.
             dec_deg (float): Target Declination in degrees.
 
         Steps:
             1. Applies software offsets to the target coordinates.
-            2. Converts the target RA/Dec to encoder steps.
+            2. Converts the target HA/Dec to encoder steps.
             3. Commands the hardware to slew to the target encoder positions.
             4. Monitors the movement until the target is reached.
 
@@ -208,19 +208,19 @@ class SchierMount():
             Exception: For communication or hardware errors.
         """
         try:
-            self.logger.info(f"Slewing to RA: {ra_deg}, Dec: {dec_deg}...")
+            self.logger.info(f"Slewing to HA: {ha_deg}, Dec: {dec_deg}...")
             self.state = MountState.SLEWING
             self._move_task = asyncio.current_task()
 
             # 1. Apply software offsets
-            target_ra = ra_deg + self.ra_offset_deg
+            target_ha = ha_deg + self.ha_offset_deg
             target_dec = dec_deg + self.dec_offset_deg
 
             # 2. Convert to encoder steps
-            ra_steps, dec_steps = self.coord.radec_to_enc(target_ra, target_dec)
+            ra_steps, dec_steps = self.coord.hadec_to_enc(target_ha, target_dec)
 
             # 3. Send hardware command
-            self.logger.info(f"Slew Command: target RA={target_ra:.4f} ({int(ra_steps)} enc), target Dec={target_dec:.4f} ({int(dec_steps)} enc)")
+            self.logger.info(f"Slew Command: target HA={target_ha:.4f} ({int(ra_steps)} enc), target Dec={target_dec:.4f} ({int(dec_steps)} enc)")
             await self._safe_comm(self.comm.slew_mount, int(ra_steps), int(dec_steps))
 
             # 4. Wait for completion
@@ -307,29 +307,29 @@ class SchierMount():
         finally:
             self._move_task = None
 
-    async def track_non_sidereal(self, ra_rate : float, dec_rate : float):
+    async def track_non_sidereal(self, ha_rate : float, dec_rate : float):
         """
         Starts tracking at a custom non-sidereal rate.
 
         Args:
-            ra_rate (float): Tracking rate for Right Ascension in degrees per second.
+            ha_rate (float): Tracking rate for Hour Angle in degrees per second.
             dec_rate (float): Tracking rate for Declination in degrees per second.
 
         Raises:
-            ValueError: If the requested rate exceeds the safety limit (2.0 deg/sec).
+            ValueError: If the requested rate exceeds the safety limit (5.0 deg/sec).
             Exception: If the tracking command fails to send to the hardware.
         """
         try:
-            self.logger.info(f"Starting non-sidereal tracking (RA: {ra_rate}, Dec: {dec_rate})...")
+            self.logger.info(f"Starting non-sidereal tracking (HA: {ha_rate}, Dec: {dec_rate})...")
             self.state = MountState.TRACKING
 
-            # Limit tracking rate to 2 degrees per second to prevent hardware strain
+            # Limit tracking rate to 5 degrees per second to prevent hardware strain
             MAX_TRACK_RATE = 5.0
-            if abs(ra_rate) > MAX_TRACK_RATE or abs(dec_rate) > MAX_TRACK_RATE:
+            if abs(ha_rate) > MAX_TRACK_RATE or abs(dec_rate) > MAX_TRACK_RATE:
                 raise ValueError(f"Tracking rate exceeds maximum limit of {MAX_TRACK_RATE} deg/sec")
 
             # Convert deg/sec to steps/sec
-            ra_steps_per_sec = -1* ra_rate * self.config.encoder['steps_per_deg_ra']
+            ra_steps_per_sec = -1* ha_rate * self.config.encoder['steps_per_deg_ra']
             dec_steps_per_sec = dec_rate * self.config.encoder['steps_per_deg_dec']
 
             await self._safe_comm(self.comm.track_mount, ra_steps_per_sec, dec_steps_per_sec)
@@ -340,38 +340,42 @@ class SchierMount():
             self.logger.error(f"Failed to start non-sidereal tracking: {e}")
             raise
 
-    async def update_offsets(self, delta_ra_deg :float, delta_dec_deg : float):
+    async def update_offsets(self, delta_ha_deg :float, delta_dec_deg : float):
         """
         Updates the software-level coordinate offsets.
 
         Args:
-            delta_ra_deg (float): The offset to apply to Right Ascension in degrees.
+            delta_ha_deg (float): The offset to apply to Hour Angle in degrees.
             delta_dec_deg (float): The offset to apply to Declination in degrees.
         """
-        self.ra_offset_deg = delta_ra_deg
+        self.ha_offset_deg = delta_ha_deg
         self.dec_offset_deg = delta_dec_deg
-        self.logger.info(f"Offsets updated to RA: {delta_ra_deg}, Dec: {delta_dec_deg}")
+        self.logger.info(f"Offsets updated to HA: {delta_ha_deg}, Dec: {delta_dec_deg}")
 
     async def get_offsets(self) -> tuple[float, float]:
         """
         Retrieves the current software-level coordinate offsets.
 
         Returns:
-            tuple[float, float]: A tuple containing (ra_offset_deg, dec_offset_deg).
+            tuple[float, float]: A tuple containing (ha_offset_deg, dec_offset_deg).
         """
-        return self.ra_offset_deg, self.dec_offset_deg
+        return self.ha_offset_deg, self.dec_offset_deg
 
-    async def get_ra_dec(self):
+    async def get_ha_dec(self):
         """
-        Returns the current RA and Dec of the telescope in degrees.
+        Returns the current HA and Dec of the telescope in degrees.
         Calculated using the current encoder positions and the coordinate module,
         excluding any software offsets.
 
         Returns:
-            tuple: (ra_deg, dec_deg) as floats.
+            tuple: (ha_deg, dec_deg) as floats.
         """
-
-        return 1,1
+        ra_enc = self.current_positions["ra_enc"]
+        dec_enc = self.current_positions["dec_enc"]
+        
+        ha_deg, dec_deg = self.coord.enc_to_hadec(ra_enc, dec_enc)
+        
+        return ha_deg, dec_deg
 
     async def _attempt_recovery(self):
         self.logger.info("Attempting servo and mount recovery...")
