@@ -160,11 +160,10 @@ class MountComm:
             self._send_command("StopRA")
             self._send_command("StopDec")
 
-            # check if we do not have any error status bits, if so we cannot home!
+            # check if we do not have any error status bits, if so we cannot home! TODO: issue when high current on axis when at edge ...
             if self.get_axis_status_bits(0)['any_error'] or self.get_axis_status_bits(1)['any_error']:
-                print(("BROPRORORN"))
-                # raise MountError("Cannot home: Axis status error detected")
-                # TODO: SEE this later, prioblem trying to home if at limits or any opther issues
+                raise MountError("Cannot home: Axis status error detected")
+
 
             self._send_command("VelRa", self.config.speeds['home_ra'])
             self._send_command("VelDec", self.config.speeds['home_dec'])

@@ -58,8 +58,8 @@ async def run_random_slews(n_points, output_csv="slew_results.csv"):
         pointings_completed = 0
         while pointings_completed < n_points:
             # Generate random HA/Dec within range
-            target_ha = random.uniform(-90.0, 90.0)
-            target_dec = random.uniform(-90.0, 30.0)
+            target_ha = random.uniform(-85.0, 85.0)
+            target_dec = random.uniform(-90.0, 10.0)
             
             # Check horizon
             if not is_above_horizon(target_ha, target_dec, lat):
