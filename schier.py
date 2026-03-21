@@ -390,13 +390,7 @@ class SchierMount():
     async def _await_encoder_stop(self, tolerance=100, timeout=60):
         """
         Wait until encoders stay within tolerance for 5 seconds or timeout.
-
-        Args:
-            tolerance (int): Maximum allowed encoder count change between samples.
-            timeout (int): Maximum time in seconds to wait for stability.
-
-        Raises:
-            TimeoutError: If the mount does not stabilize within the timeout period.
+        Immediately raises an error if the mount enters a FAULT state.
         """
         start_time = asyncio.get_event_loop().time()
         stable_start_time = None
@@ -405,6 +399,9 @@ class SchierMount():
         last_dec = self.current_positions["dec_enc"]
 
         while (asyncio.get_event_loop().time() - start_time) < timeout:
+            if self.state == MountState.FAULT:
+                raise RuntimeError("Mount entered FAULT state during movement.")
+
             curr_ra = self.current_positions["ra_enc"]
             curr_dec = self.current_positions["dec_enc"]
 
@@ -423,19 +420,13 @@ class SchierMount():
     async def _await_mount_at_position(self, timeout=180, tolerance=100):
         """
         Wait until current encoder positions match target positions within tolerance.
-        Uses the intended targets directly from the comm module.
-
-        Args:
-            timeout (int): Maximum time in seconds to wait for the mount to reach the target.
-            tolerance (int): Maximum allowed difference between actual and target encoder counts.
-
-        Raises:
-            TimeoutError: If the mount does not reach the target position within the
-                          specified timeout period.
+        Immediately raises an error if the mount enters a FAULT state.
         """
         start_time = asyncio.get_event_loop().time()
 
         while (asyncio.get_event_loop().time() - start_time) < timeout:
+            if self.state == MountState.FAULT:
+                raise RuntimeError("Mount entered FAULT state during slew.")
 
             ra_diff = abs(self.current_positions["ra_enc"] - self.comm.ra_target_enc)
             dec_diff = abs(self.current_positions["dec_enc"] - self.comm.dec_target_enc)
@@ -443,7 +434,7 @@ class SchierMount():
             if ra_diff <= tolerance and dec_diff <= tolerance:
                 return
 
-            await asyncio.sleep(0.01)
+            await asyncio.sleep(0.1)
 
         raise TimeoutError(f"Mount failed to reach target position within {timeout}s ")
 
