@@ -41,7 +41,7 @@ class MountCoordinates:
         # mech_dec = 120 - (Dec + 90) = 30 - Dec
         ha_flipped = ((ha + 180 + 180) % 360) - 180
         mech_ha_below = ha_flipped - 92.5
-        mech_dec_below = 30 - dec_deg + 13
+        mech_dec_below = 30 - dec_deg - 13
 
         # Check limits for Normal Mode
         ra_lim = (self.config.limits['ra_min'], self.config.limits['ra_max'])
@@ -77,8 +77,8 @@ class MountCoordinates:
         Converts encoder counts back to HA and Dec degrees.
         """
         # Convert encoder counts back to mechanical degrees
-        mech_ha = (ra_enc - self.config.encoder['zeropt_ra']) / self.config.encoder['steps_per_deg_ra']
-        mech_dec = (dec_enc - self.config.encoder['zeropt_dec']) / self.config.encoder['steps_per_deg_dec']
+        mech_ha = (ra_enc - self.config.encoder['zeropt_ra']) / self.config.encoder['steps_per_deg_ra'] + 13
+        mech_dec = (dec_enc - self.config.encoder['zeropt_dec']) / self.config.encoder['steps_per_deg_dec'] + 13
 
         # Determine if we are in Normal or Below-Pole mode based on mech_dec
         # Center of Dec range (120) is the pole.
