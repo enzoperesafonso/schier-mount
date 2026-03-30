@@ -37,8 +37,8 @@ class MountConfig:
 
         self.encoder = {
 
-            'steps_per_deg_ra': 24382.0,
-            'steps_per_deg_dec': 19395.0,
+            'steps_per_deg_dec': 24382.0,
+            'steps_per_deg_ra': 19395.0,
 
             'zeropt_ra': 0,
             'zeropt_dec': 0,
@@ -46,8 +46,8 @@ class MountConfig:
         }
 
         self.limits = {
-            'ra_min': -185.0, 'ra_max': 0.0,
-            'dec_min': 0.0, 'dec_max': 240.0
+            'dec_min': -185.0, 'dec_max': 0.0,
+            'ra_min': 0.0, 'ra_max': 240.0
         }
 
         self.speeds = {

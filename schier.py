@@ -377,9 +377,8 @@ class SchierMount():
         
         return ha_deg, dec_deg
 
-    async def _attempt_recovery(self):
+    async def attempt_recovery(self):
         self.logger.info("Attempting servo and mount recovery...")
-        max_retry_attempts = 3
         try:
 
             await self._safe_comm(self.comm.init_mount)
