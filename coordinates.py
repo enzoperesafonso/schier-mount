@@ -34,14 +34,14 @@ class MountCoordinates:
         # mech_ha = HA - 92.5
         # mech_dec = Dec + 210 (since -90 -> 120, offset is 210)
         mech_ha_normal = ha - 92.5
-        mech_dec_normal = dec_deg + 210
+        mech_dec_normal = dec_deg + 210 - 13
 
         # Try Below-Pole Mode
         # ha_flipped = HA + 180
         # mech_dec = 120 - (Dec + 90) = 30 - Dec
         ha_flipped = ((ha + 180 + 180) % 360) - 180
         mech_ha_below = ha_flipped - 92.5
-        mech_dec_below = 30 - dec_deg
+        mech_dec_below = 30 - dec_deg - 13
 
         # Check limits for Normal Mode
         ra_lim = (self.config.limits['ra_min'], self.config.limits['ra_max'])
