@@ -92,9 +92,7 @@ async def run_random_slews(n_points, output_csv="slew_results.csv"):
                 if mount.state.name == "FAULT" or "FAULT" in error_msg:
                     logging.warning("Fault detected! Attempting recovery (re-homing)...")
                     try:
-                        # Attempt to rehome
-                        await mount.home_mount()
-                        logging.info("Recovery successful. Continuing test sequence.")
+                        break  # Break the while loop to stop tests
                     except Exception as recovery_error:
                         logging.critical(f"RECOVERY FAILED: {recovery_error}. Aborting test sequence.")
 
