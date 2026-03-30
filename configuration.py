@@ -63,7 +63,7 @@ class MountConfig:
 
         self.park = {'ra': -92.5, 'dec': 90.0}
 
-        self.standby = {'ra': -92.5, 'dec': 186.73}
+        self.standby = {'ra': -92.5, 'dec': 174.0}
 
 
 
