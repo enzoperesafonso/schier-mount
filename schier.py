@@ -459,6 +459,7 @@ class SchierMount():
 
                 if ra_axis_status['any_error'] or dec_axis_status['any_error']:
                     self.state = MountState.FAULT
+                    await self.init_mount()
 
             except Exception as e:
                 self.logger.error(f"Status Loop Error: {e}")
