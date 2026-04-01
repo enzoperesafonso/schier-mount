@@ -1,9 +1,6 @@
 import logging
 from astropy.coordinates import SkyCoord, EarthLocation, FK5
-from astropy.time import Time
 from astropy import units as u
-import numpy as np
-
 
 class MountCoordinates:
     def __init__(self, config):
