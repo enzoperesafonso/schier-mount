@@ -42,6 +42,7 @@ class MountConfig:
 
             'zeropt_ra': 0,
             'zeropt_dec': 0,
+            'pole_offset': -13.0,
             'tolerance': 50
         }
 

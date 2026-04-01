@@ -19,29 +19,34 @@ class MountCoordinates:
     def hadec_to_enc(self, ha_deg: float, dec_deg: float) -> tuple[int, int]:
         """
         Converts Hour Angle (HA) and Declination (Dec) to encoder counts.
-        Handles below-pole pointing logic asnd mechanical limits.
+        Handles meridian flip (below-pole pointing) and mechanical limits.
         
         Mechanical mapping:
         - RA center (-92.5) = HA 0
         - Dec center (120) = SCP (Dec -90)
         - RA Range: [-185, 0]
         - Dec Range: [0, 240]
+        
+        The "flip" identity: (HA, Dec) == (HA + 180, 180 - Dec)
+        For this mount, flipping is handled by choosing the mechanical branch 
+        that stays within [0, 240] for Dec and [-185, 0] for RA.
         """
         # Normalize HA to [-180, 180]
         ha = ((ha_deg + 180) % 360) - 180
+        pole_offset = self.config.encoder.get('pole_offset', 0.0)
 
         # Try Normal Mode
         # mech_ha = HA - 92.5
-        # mech_dec = Dec + 210 (since -90 -> 120, offset is 210)
+        # mech_dec = Dec + 210
         mech_ha_normal = ha - 92.5
-        mech_dec_normal = dec_deg + 210 - 13 # for some reasone there is a roughly 13deg pole offset that was hiding in the og code ...
+        mech_dec_normal = dec_deg + 210 + pole_offset
 
-        # Try Below-Pole Mode
+        # Try Below-Pole (Flipped) Mode
         # ha_flipped = HA + 180
-        # mech_dec = 120 - (Dec + 90) = 30 - Dec
-        ha_flipped = ((ha + 180 + 180) % 360) - 180
+        # mech_dec = 30 - Dec
+        ha_flipped = (ha % 360) - 180
         mech_ha_below = ha_flipped - 92.5
-        mech_dec_below = 30 - dec_deg - 13
+        mech_dec_below = 30 - dec_deg + pole_offset
 
         # Check limits for Normal Mode
         ra_lim = (self.config.limits['ra_min'], self.config.limits['ra_max'])
@@ -76,14 +81,15 @@ class MountCoordinates:
         """
         Converts encoder counts back to HA and Dec degrees.
         """
+        pole_offset = self.config.encoder.get('pole_offset', 0.0)
+        
         # Convert encoder counts back to mechanical degrees
         mech_ha = (ra_enc - self.config.encoder['zeropt_ra']) / self.config.encoder['steps_per_deg_ra']
-        mech_dec = (dec_enc - self.config.encoder['zeropt_dec']) / self.config.encoder['steps_per_deg_dec'] + 13
+        # Apply pole offset to get back to the theoretical mechanical frame
+        mech_dec = (dec_enc - self.config.encoder['zeropt_dec']) / self.config.encoder['steps_per_deg_dec'] - pole_offset
 
         # Determine if we are in Normal or Below-Pole mode based on mech_dec
         # Center of Dec range (120) is the pole.
-        # mech_dec > 120 is looking towards the equator in Normal mode.
-        # mech_dec < 120 is looking "under" the pole (Below-Pole).
         
         if mech_dec >= 120:
             # Normal Mode: mech_dec = Dec + 210 => Dec = mech_dec - 210
@@ -95,7 +101,7 @@ class MountCoordinates:
             dec_deg = 30 - mech_dec
             # mech_ha = HA_flipped - 92.5 => HA_flipped = mech_ha + 92.5
             ha_flipped = mech_ha + 92.5
-            # HA = HA_flipped + 180
+            # HA = HA_flipped + 180 (or HA_flipped - 180, normalize it)
             ha_deg = ha_flipped + 180
 
         return ha_deg % 360, dec_deg
