@@ -94,7 +94,8 @@ class SchierMount():
 
             await self._safe_comm(self.comm.zero_mount)
 
-            self.state = MountState.IDLE
+            await self.park_mount()
+
             self.logger.info("Homing sequence completed successfully.")
         except Exception as e:
             logging.error(f"Failed to home mount: {e}")
