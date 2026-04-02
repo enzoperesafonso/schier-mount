@@ -94,6 +94,7 @@ class SchierMount():
 
             await self._safe_comm(self.comm.zero_mount)
 
+            # send to home position so we don't trigger any near limit errors
             await self.park_mount()
 
             self.logger.info("Homing sequence completed successfully.")
