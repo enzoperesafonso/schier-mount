@@ -320,13 +320,15 @@ class SchierMount():
             sidereal_rate = 0.004178 
             ha_rate = sidereal_rate - ra_rate
 
-            # In Normal mode: steps = -ha_rate * steps_per_deg
-            # In Below-Pole mode: steps = ha_rate * steps_per_deg
-            direction = 1 if is_below_pole else -1
-            ra_steps_per_sec = direction * ha_rate * self.config.encoder['steps_per_deg_ra']
-            dec_steps_per_sec = dec_rate * self.config.encoder['steps_per_deg_dec']
+            # RA Direction: Normal=-1, Below-Pole=+1 (relative to HA rate)
+            # Dec Direction: Normal=+1, Below-Pole=-1 (relative to Dec rate)
+            ra_direction = 1 if is_below_pole else -1
+            dec_direction = -1 if is_below_pole else 1
 
-            self.logger.info(f"Tracking mode: {'Below-Pole' if is_below_pole else 'Normal'} | RA Rate: {ra_steps_per_sec:.4f} steps/s")
+            ra_steps_per_sec = ra_direction * ha_rate * self.config.encoder['steps_per_deg_ra']
+            dec_steps_per_sec = dec_direction * dec_rate * self.config.encoder['steps_per_deg_dec']
+
+            self.logger.info(f"Tracking mode: {'Below-Pole' if is_below_pole else 'Normal'} | RA Rate: {ra_steps_per_sec:.4f} steps/s | Dec Rate: {dec_steps_per_sec:.4f} steps/s")
 
             await self._safe_comm(self.comm.track_mount, ra_steps_per_sec, dec_steps_per_sec)
 
