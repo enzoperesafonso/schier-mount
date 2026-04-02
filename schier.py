@@ -254,7 +254,8 @@ class SchierMount():
             # Sidereal rate in degrees per second
             sidereal_deg_per_sec = 0.004178
 
-            # Decide sign based on orientation
+            # Decide sign based
+            # on orientation
             direction = 1 if is_below_pole else -1
             sidereal_rate_steps_per_sec = direction * sidereal_deg_per_sec * self.config.encoder['steps_per_deg_ra']
 
@@ -473,10 +474,22 @@ class SchierMount():
                 }
 
                 if ra_axis_status['any_error'] or dec_axis_status['any_error']:
-                    self.state = MountState.FAULT
-                    await self.init_mount()
+                    if self.state != MountState.FAULT:
+                        self.logger.error("Hardware fault detected! Stopping mount.")
+                        self.state = MountState.FAULT
+                        await self.stop_mount()
+                    # Optionally try to re-init after stopping
+                        await self.init_mount()
 
             except Exception as e:
                 self.logger.error(f"Status Loop Error: {e}")
+                if self.state != MountState.FAULT:
+                    self.state = MountState.FAULT
+                    # Try to stop hardware if possible
+                    try:
+                        await self.stop_mount()
+                        await self.init_mount()
+                    except:
+                        pass
 
             await asyncio.sleep(0.01)
