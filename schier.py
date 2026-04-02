@@ -498,15 +498,13 @@ class SchierMount():
                         self.logger.warning(f"Software limit approach detected (RA: {mech_ra:.2f}, Dec: {mech_dec:.2f})! Emergency stop.")
                         await self.stop_mount()
 
-                except Exception as e:
-
+            except Exception as e:
                 self.logger.error(f"Status Loop Error: {e}")
                 if self.state != MountState.FAULT:
                     self.state = MountState.FAULT
                     # Try to stop hardware if possible
                     try:
                         await self.stop_mount()
-                        await self.init_mount()
                     except:
                         pass
 
