@@ -86,6 +86,12 @@ class SchierMount():
             self.state = MountState.HOMING
             self._move_task = asyncio.current_task()
 
+            # Use safe_comm to send the init command to ensure we are in stop condition before homing!
+            await self._safe_comm(self.comm.init_mount())
+
+            # give it a chance to get into stop ...
+            await asyncio.sleep(5.0)
+
             # Use safe_comm to send the homing command
             await self._safe_comm(self.comm.home_mount)
 
