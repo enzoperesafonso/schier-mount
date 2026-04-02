@@ -33,16 +33,15 @@ class MountCoordinates:
         pole_offset = self.config.encoder.get('pole_offset', 0.0)
 
         # Try Normal Mode
-        # mech_ha = HA - 92.5
+        # mech_ha = -HA - 92.5
         # mech_dec = Dec + 210
-        mech_ha_normal = ha - 92.5
+        mech_ha_normal = -ha - 92.5
         mech_dec_normal = dec_deg + 210 + pole_offset
 
         # Try Below-Pole (Flipped) Mode
-        # ha_flipped = HA + 180
-        # mech_dec = 30 - Dec
+        # ha_flipped = -(HA + 180)
         ha_flipped = (ha % 360) - 180
-        mech_ha_below = ha_flipped - 92.5
+        mech_ha_below = -ha_flipped - 92.5
         mech_dec_below = 30 - dec_deg + pole_offset
 
         # Check limits for Normal Mode
@@ -91,13 +90,13 @@ class MountCoordinates:
         if mech_dec >= 120:
             # Normal Mode: mech_dec = Dec + 210 => Dec = mech_dec - 210
             dec_deg = mech_dec - 210
-            # mech_ha = HA - 92.5 => HA = mech_ha + 92.5
-            ha_deg = mech_ha + 92.5
+            # mech_ha = -HA - 92.5 => HA = -(mech_ha + 92.5)
+            ha_deg = -(mech_ha + 92.5)
         else:
             # Below-Pole Mode: mech_dec = 30 - Dec => Dec = 30 - mech_dec
             dec_deg = 30 - mech_dec
-            # mech_ha = HA_flipped - 92.5 => HA_flipped = mech_ha + 92.5
-            ha_flipped = mech_ha + 92.5
+            # mech_ha = -HA_flipped - 92.5 => HA_flipped = -(mech_ha + 92.5)
+            ha_flipped = -(mech_ha + 92.5)
             # HA = HA_flipped + 180 (or HA_flipped - 180, normalize it)
             ha_deg = ha_flipped + 180
 
