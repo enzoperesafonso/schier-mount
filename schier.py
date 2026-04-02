@@ -57,7 +57,7 @@ class SchierMount():
         try:
             self.logger.info("Initializing mount hardware...")
             await self._safe_comm(self.comm.init_mount)
-            self.state = MountState.PARKED
+            self.state = MountState.UNKNOWN
             if self._status_task is None or self._status_task.done():
                 self._status_task = asyncio.create_task(self._status_loop())
             self.logger.info("Mount initialization complete.")
