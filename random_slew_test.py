@@ -33,12 +33,9 @@ async def run_random_slews(n_points, output_csv="slew_results.csv"):
     config = mount.config
     lat = config.location['latitude']
     
-    # Mechanical HA range: [-92.5, 92.5]
-    # Mechanical Dec range: [-210, 30] (effectively limited by horizon)
-    
     csv_header = [
-        "start_ha", "start_dec", "target_ha", "target_dec", "start_time", "end_time", 
-        "slew_duration", "status", "error_msg", "final_ha", "final_dec"
+        "start_ra", "start_dec", "target_ra", "target_dec", "start_time", "end_time", 
+        "slew_duration", "status", "error_msg", "final_ra", "final_dec"
     ]
     
     # Open CSV and write header
@@ -58,17 +55,20 @@ async def run_random_slews(n_points, output_csv="slew_results.csv"):
         pointings_completed = 0
         while pointings_completed < n_points:
             # Get starting coordinates
-            start_ha, start_dec = await mount.get_ha_dec()
+            start_ra, start_dec = await mount.get_ra_dec()
 
-            # Generate random HA/Dec within range
-            target_ha = random.uniform(-90.0, 90.0)
+            # Generate random RA/Dec within range
+            target_ra = random.uniform(0.0, 360.0)
             target_dec = random.uniform(-90.0, 30.0)
             
+            # Convert target RA to HA to check horizon (optional but good for consistency)
+            target_ha = mount.coord.ra_to_ha(target_ra)
+
             # Check horizon
             if not is_above_horizon(target_ha, target_dec, lat):
                 continue
                 
-            logging.info(f"Target {pointings_completed + 1}/{n_points}: HA={target_ha:.2f}, Dec={target_dec:.2f}")
+            logging.info(f"Target {pointings_completed + 1}/{n_points}: RA={target_ra:.2f} (HA={target_ha:.2f}), Dec={target_dec:.2f}")
             
             start_ts = time.time()
             start_time_str = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(start_ts))
@@ -77,7 +77,7 @@ async def run_random_slews(n_points, output_csv="slew_results.csv"):
             slew_duration = 0.0
             
             try:
-                await mount.slew_mount(target_ha, target_dec)
+                await mount.slew_mount_ra_dec(target_ra, target_dec)
                 end_ts = time.time()
                 slew_duration = end_ts - start_ts
                 logging.info(f"Slew complete in {slew_duration:.2f}s")
@@ -99,16 +99,16 @@ async def run_random_slews(n_points, output_csv="slew_results.csv"):
                         break # Break the while loop to stop tests
             
             # Get final coordinates
-            final_ha, final_dec = await mount.get_ha_dec()
+            final_ra, final_dec = await mount.get_ra_dec()
             end_time_str = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(end_ts))
             
             # Log to CSV
             with open(output_csv, 'a', newline='') as f:
                 writer = csv.writer(f)
                 writer.writerow([
-                    f"{start_ha:.4f}", f"{start_dec:.4f}",
-                    f"{target_ha:.4f}", f"{target_dec:.4f}", start_time_str, end_time_str,
-                    f"{slew_duration:.2f}", status, error_msg, f"{final_ha:.4f}", f"{final_dec:.4f}"
+                    f"{start_ra:.4f}", f"{start_dec:.4f}",
+                    f"{target_ra:.4f}", f"{target_dec:.4f}", start_time_str, end_time_str,
+                    f"{slew_duration:.2f}", status, error_msg, f"{final_ra:.4f}", f"{final_dec:.4f}"
                 ])
             
             pointings_completed += 1

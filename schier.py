@@ -35,7 +35,7 @@ class SchierMount():
             "dec_enc": 0,
         }
 
-        self.ha_offset_deg = 0.0
+        self.ra_offset_deg = 0.0
         self.dec_offset_deg = 0.0
 
         self.config = MountConfig()
@@ -189,32 +189,28 @@ class SchierMount():
         finally:
             self._move_task = None
 
-    async def slew_mount(self, ha_deg : float, dec_deg : float ):
+    async def slew_mount(self, ha_deg : float, dec_deg : float, apply_offsets=False):
         """
         Slews the mount to the specified HA and Dec coordinates.
 
         Args:
             ha_deg (float): Target Hour Angle in degrees.
             dec_deg (float): Target Declination in degrees.
-
-        Steps:
-            1. Applies software offsets to the target coordinates.
-            2. Converts the target HA/Dec to encoder steps.
-            3. Commands the hardware to slew to the target encoder positions.
-            4. Monitors the movement until the target is reached.
-
-        Raises:
-            TimeoutError: If the mount fails to reach the target within the timeout.
-            Exception: For communication or hardware errors.
+            apply_offsets (bool): Whether to apply software RA/Dec offsets.
         """
         try:
-            self.logger.info(f"Slewing to HA: {ha_deg}, Dec: {dec_deg}...")
+            self.logger.info(f"Slewing to HA: {ha_deg}, Dec: {dec_deg} (offsets={apply_offsets})...")
             self.state = MountState.SLEWING
             self._move_task = asyncio.current_task()
 
-            # 1. Apply software offsets
-            target_ha = ha_deg + self.ha_offset_deg
-            target_dec = dec_deg + self.dec_offset_deg
+            # 1. Apply software offsets if requested
+            if apply_offsets:
+                # HA = LST - RA => dHA = -dRA
+                target_ha = ha_deg - self.ra_offset_deg
+                target_dec = dec_deg + self.dec_offset_deg
+            else:
+                target_ha = ha_deg
+                target_dec = dec_deg
 
             # 2. Convert to encoder steps
             ra_steps, dec_steps = self.coord.hadec_to_enc(target_ha, target_dec)
@@ -267,36 +263,25 @@ class SchierMount():
     async def shift_mount(self, delta_ra: float, delta_dec: float):
         """
         Shifts the mount by a relative amount of degrees in RA and Dec.
-        Uses cosine projection to ensure 'delta_ra' represents true angular
-        distance on the sky regardless of proximity to the poles.
-
+        
         Args:
             delta_ra (float): The relative shift in Right Ascension (degrees).
             delta_dec (float): The relative shift in Declination (degrees).
-
-        Steps:
-            1. Retrieves current RA/Dec.
-            2. Applies cosine correction (secant of Dec) to RA to maintain true angular distance.
-            3. Converts corrected degrees to encoder steps.
-            4. Commands the hardware to perform a relative move.
-            5. Waits for the mount to reach the target position.
-
-        Raises:
-            TimeoutError: If the mount fails to reach the target within the timeout.
-            Exception: For communication or hardware errors.
         """
         try:
             self.state = MountState.SLEWING
             self._move_task = asyncio.current_task()
 
-
-            ra_steps = int(delta_ra* self.config.encoder['steps_per_deg_ra'])
+            # HA = LST - RA => dHA = -dRA
+            # If we want to increase RA, we must move the mount West (decrease HA).
+            # Negative steps per second move the mount West (increasing HA).
+            # So dHA = -dRA.
+            # Steps = dHA * (-steps_per_deg_ra) = (-dRA) * (-steps_per_deg_ra) = dRA * steps_per_deg_ra.
+            
+            ra_steps = int(delta_ra * self.config.encoder['steps_per_deg_ra'])
             dec_steps = int(delta_dec * self.config.encoder['steps_per_deg_dec'])
 
-            # 4. Hardware Communication
             await self._safe_comm(self.comm.shift_mount, ra_steps, dec_steps)
-
-            # 5. Wait for completion
             await self._await_mount_at_position()
 
             self.state = MountState.IDLE
@@ -307,29 +292,23 @@ class SchierMount():
         finally:
             self._move_task = None
 
-    async def track_non_sidereal(self, ha_rate : float, dec_rate : float):
+    async def track_non_sidereal(self, ra_rate : float, dec_rate : float):
         """
         Starts tracking at a custom non-sidereal rate.
 
         Args:
-            ha_rate (float): Tracking rate for Hour Angle in degrees per second.
+            ra_rate (float): Tracking rate for Right Ascension in degrees per second.
             dec_rate (float): Tracking rate for Declination in degrees per second.
-
-        Raises:
-            ValueError: If the requested rate exceeds the safety limit (5.0 deg/sec).
-            Exception: If the tracking command fails to send to the hardware.
         """
         try:
-            self.logger.info(f"Starting non-sidereal tracking (HA: {ha_rate}, Dec: {dec_rate})...")
+            self.logger.info(f"Starting non-sidereal tracking (RA rate: {ra_rate}, Dec rate: {dec_rate})...")
             self.state = MountState.TRACKING
 
-            # Limit tracking rate to 5 degrees per second to prevent hardware strain
-            MAX_TRACK_RATE = 5.0
-            if abs(ha_rate) > MAX_TRACK_RATE or abs(dec_rate) > MAX_TRACK_RATE:
-                raise ValueError(f"Tracking rate exceeds maximum limit of {MAX_TRACK_RATE} deg/sec")
+            # HA_rate = Sidereal_rate - RA_rate
+            sidereal_rate = 0.004178 
+            ha_rate = sidereal_rate - ra_rate
 
-            # Convert deg/sec to steps/sec
-            ra_steps_per_sec = -1* ha_rate * self.config.encoder['steps_per_deg_ra']
+            ra_steps_per_sec = -1 * ha_rate * self.config.encoder['steps_per_deg_ra']
             dec_steps_per_sec = dec_rate * self.config.encoder['steps_per_deg_dec']
 
             await self._safe_comm(self.comm.track_mount, ra_steps_per_sec, dec_steps_per_sec)
@@ -340,26 +319,43 @@ class SchierMount():
             self.logger.error(f"Failed to start non-sidereal tracking: {e}")
             raise
 
-    async def update_offsets(self, delta_ha_deg :float, delta_dec_deg : float):
+    async def update_offsets(self, delta_ra_deg :float, delta_dec_deg : float):
         """
         Updates the software-level coordinate offsets.
 
         Args:
-            delta_ha_deg (float): The offset to apply to Hour Angle in degrees.
+            delta_ra_deg (float): The offset to apply to Right Ascension in degrees.
             delta_dec_deg (float): The offset to apply to Declination in degrees.
         """
-        self.ha_offset_deg = delta_ha_deg
+        self.ra_offset_deg = delta_ra_deg
         self.dec_offset_deg = delta_dec_deg
-        self.logger.info(f"Offsets updated to HA: {delta_ha_deg}, Dec: {delta_dec_deg}")
+        self.logger.info(f"Offsets updated to RA: {delta_ra_deg}, Dec: {delta_dec_deg}")
 
     async def get_offsets(self) -> tuple[float, float]:
         """
         Retrieves the current software-level coordinate offsets.
 
         Returns:
-            tuple[float, float]: A tuple containing (ha_offset_deg, dec_offset_deg).
+            tuple[float, float]: A tuple containing (ra_offset_deg, dec_offset_deg).
         """
-        return self.ha_offset_deg, self.dec_offset_deg
+        return self.ra_offset_deg, self.dec_offset_deg
+
+    async def slew_mount_ra_dec(self, ra_deg : float, dec_deg : float ):
+        """
+        Slews the mount to the specified RA and Dec coordinates.
+        """
+        target_ra = ra_deg + self.ra_offset_deg
+        target_dec = dec_deg + self.dec_offset_deg
+        ha_deg = self.coord.ra_to_ha(target_ra)
+        await self.slew_mount(ha_deg, target_dec, apply_offsets=False)
+
+    async def get_ra_dec(self):
+        """
+        Returns the current RA and Dec of the telescope in degrees.
+        """
+        ha_deg, dec_deg = await self.get_ha_dec()
+        ra_deg = self.coord.ha_to_ra(ha_deg)
+        return ra_deg, dec_deg
 
     async def get_ha_dec(self):
         """

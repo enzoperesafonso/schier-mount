@@ -13,6 +13,50 @@ class MountCoordinates:
             height=self.config.location['elevation'] * u.m
         )
         self.j2000_frame = FK5(equinox='J2000')
+    def get_lst(self) -> float:
+        """
+        Calculates the current Local Sidereal Time (LST) in degrees.
+        """
+        from astropy.time import Time
+        now = Time.now()
+        lst = now.sidereal_time('mean', longitude=self.location.lon)
+        return lst.deg
+
+    def ra_to_ha(self, ra_deg: float) -> float:
+        """
+        Converts Right Ascension (RA) to Hour Angle (HA).
+        HA = LST - RA
+        """
+        lst = self.get_lst()
+        ha = (lst - ra_deg + 360) % 360
+        if ha > 180:
+            ha -= 360
+        return ha
+
+    def ha_to_ra(self, ha_deg: float) -> float:
+        """
+        Converts Hour Angle (HA) to Right Ascension (RA).
+        RA = LST - HA
+        """
+        lst = self.get_lst()
+        ra = (lst - ha_deg + 360) % 360
+        return ra
+
+    def radec_to_enc(self, ra_deg: float, dec_deg: float) -> tuple[int, int]:
+        """
+        Converts Right Ascension (RA) and Declination (Dec) to encoder counts.
+        """
+        ha_deg = self.ra_to_ha(ra_deg)
+        return self.hadec_to_enc(ha_deg, dec_deg)
+
+    def enc_to_radec(self, ra_enc: int, dec_enc: int) -> tuple[float, float]:
+        """
+        Converts encoder counts back to RA and Dec degrees.
+        """
+        ha_deg, dec_deg = self.enc_to_hadec(ra_enc, dec_enc)
+        ra_deg = self.ha_to_ra(ha_deg)
+        return ra_deg, dec_deg
+
     def hadec_to_enc(self, ha_deg: float, dec_deg: float) -> tuple[int, int]:
         """
         Converts Hour Angle (HA) and Declination (Dec) to encoder counts.
