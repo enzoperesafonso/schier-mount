@@ -237,20 +237,28 @@ class SchierMount():
         Starts sidereal tracking on the RA axis.
 
         Calculates the sidereal rate in steps per second based on the mount's
-        configuration. Note that for the Southern Hemisphere, the RA motor
-        direction is inverted.
+        configuration and orientation. In the Southern Hemisphere:
+        - Normal Mode: Negative RA motor direction tracks stars.
+        - Below-Pole: Positive RA motor direction tracks stars.
 
         Transitions the mount state to TRACKING.
-
-        Raises:
-            Exception: If the tracking command fails to send to the hardware.
         """
         try:
             self.logger.info("Starting sidereal tracking...")
             self.state = MountState.TRACKING
 
-            # since we are in the SOUTHERN HEMISPHERE we need to flip the ra motor direction ...
-            sidereal_rate_steps_per_sec = -1 * 0.004178 * self.config.encoder['steps_per_deg_ra']
+            ra_enc = self.current_positions["ra_enc"]
+            dec_enc = self.current_positions["dec_enc"]
+            is_below_pole = self.coord.is_below_pole(ra_enc, dec_enc)
+
+            # Sidereal rate in degrees per second
+            sidereal_deg_per_sec = 0.004178
+
+            # Decide sign based on orientation
+            direction = 1 if is_below_pole else -1
+            sidereal_rate_steps_per_sec = direction * sidereal_deg_per_sec * self.config.encoder['steps_per_deg_ra']
+
+            self.logger.info(f"Tracking mode: {'Below-Pole' if is_below_pole else 'Normal'} | Rate: {sidereal_rate_steps_per_sec:.4f} steps/s")
 
             await self._safe_comm(self.comm.track_mount, sidereal_rate_steps_per_sec, 0.0)
 
@@ -304,12 +312,21 @@ class SchierMount():
             self.logger.info(f"Starting non-sidereal tracking (RA rate: {ra_rate}, Dec rate: {dec_rate})...")
             self.state = MountState.TRACKING
 
+            ra_enc = self.current_positions["ra_enc"]
+            dec_enc = self.current_positions["dec_enc"]
+            is_below_pole = self.coord.is_below_pole(ra_enc, dec_enc)
+
             # HA_rate = Sidereal_rate - RA_rate
             sidereal_rate = 0.004178 
             ha_rate = sidereal_rate - ra_rate
 
-            ra_steps_per_sec = -1 * ha_rate * self.config.encoder['steps_per_deg_ra']
+            # In Normal mode: steps = -ha_rate * steps_per_deg
+            # In Below-Pole mode: steps = ha_rate * steps_per_deg
+            direction = 1 if is_below_pole else -1
+            ra_steps_per_sec = direction * ha_rate * self.config.encoder['steps_per_deg_ra']
             dec_steps_per_sec = dec_rate * self.config.encoder['steps_per_deg_dec']
+
+            self.logger.info(f"Tracking mode: {'Below-Pole' if is_below_pole else 'Normal'} | RA Rate: {ra_steps_per_sec:.4f} steps/s")
 
             await self._safe_comm(self.comm.track_mount, ra_steps_per_sec, dec_steps_per_sec)
 

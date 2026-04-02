@@ -117,6 +117,14 @@ class MountCoordinates:
 
         return enc_ra, enc_dec
 
+    def is_below_pole(self, ra_enc: int, dec_enc: int) -> bool:
+        """
+        Returns True if the mount is in Below-Pole (flipped) orientation.
+        """
+        pole_offset = self.config.encoder.get('pole_offset', 0.0)
+        mech_dec = (dec_enc - self.config.encoder['zeropt_dec']) / self.config.encoder['steps_per_deg_dec'] - pole_offset
+        return mech_dec < 120
+
     def enc_to_hadec(self, ra_enc: int, dec_enc: int) -> tuple[float, float]:
         """
         Converts encoder counts back to HA and Dec degrees.

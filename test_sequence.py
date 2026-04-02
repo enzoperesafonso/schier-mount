@@ -27,7 +27,8 @@ async def monitor_status(mount):
     while True:
         p = mount.current_positions
         ha, dec = await mount.get_ha_dec()
-        logging.info(f"  [STATUS] State: {mount.state} | RA Enc: {p['ra_enc']} | DEC Enc: {p['dec_enc']} | HA: {ha:.4f} | Dec: {dec:.4f}")
+        ra, _ = await mount.get_ra_dec()
+        logging.info(f"  [STATUS] State: {mount.state} | RA Enc: {p['ra_enc']} | DEC Enc: {p['dec_enc']} | RA: {ra:.4f} | HA: {ha:.4f} | Dec: {dec:.4f}")
         await asyncio.sleep(0.1)
 
 
