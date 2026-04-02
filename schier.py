@@ -473,15 +473,33 @@ class SchierMount():
                     "dec_enc": dec_actual,
                 }
 
+                # 2. Hardware Status Check
                 if ra_axis_status['any_error'] or dec_axis_status['any_error']:
                     if self.state != MountState.FAULT:
-                        self.logger.error("Hardware fault detected! Stopping mount.")
+                        self.logger.error(f"Hardware fault detected (RA: {ra_axis_status['raw_word1']:04x}, Dec: {dec_axis_status['raw_word1']:04x})! Stopping.")
                         self.state = MountState.FAULT
                         await self.stop_mount()
-                    # Optionally try to re-init after stopping
-                        await self.init_mount()
 
-            except Exception as e:
+                # 3. Software Limit Guard
+                # Check if we are approaching software limits while moving
+                if self.state in [MountState.TRACKING, MountState.SLEWING]:
+                    buffer_deg = 0.5  # 0.5 degree safety buffer
+
+                    ra_min = self.config.limits['ra_min'] + buffer_deg
+                    ra_max = self.config.limits['ra_max'] - buffer_deg
+                    dec_min = self.config.limits['dec_min'] + buffer_deg
+                    dec_max = self.config.limits['dec_max'] - buffer_deg
+
+                    # Convert actual positions back to mechanical degrees
+                    mech_ra = (ra_actual - self.config.encoder['zeropt_ra']) / self.config.encoder['steps_per_deg_ra']
+                    mech_dec = (dec_actual - self.config.encoder['zeropt_dec']) / self.config.encoder['steps_per_deg_dec']
+
+                    if not (ra_min <= mech_ra <= ra_max) or not (dec_min <= mech_dec <= dec_max):
+                        self.logger.warning(f"Software limit approach detected (RA: {mech_ra:.2f}, Dec: {mech_dec:.2f})! Emergency stop.")
+                        await self.stop_mount()
+
+                except Exception as e:
+
                 self.logger.error(f"Status Loop Error: {e}")
                 if self.state != MountState.FAULT:
                     self.state = MountState.FAULT
