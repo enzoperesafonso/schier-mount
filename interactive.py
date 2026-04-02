@@ -47,13 +47,17 @@ async def handle_input(mount):
             if cmd == "init":
                 await mount.init_mount()
             elif cmd == "home":
-                await mount.home_mount()
+                asyncio.create_task(mount.home_mount())
+                print("Homing started in background...")
             elif cmd == "park":
-                await mount.park_mount()
+                asyncio.create_task(mount.park_mount())
+                print("Parking started in background...")
             elif cmd == "zenith":
-                await mount.standby_mount()
+                asyncio.create_task(mount.standby_mount())
+                print("Zenith move started in background...")
             elif cmd == "stop":
                 await mount.stop_mount()
+                print("Mount stop command sent.")
             elif cmd == "pos":
                 p = mount.current_positions
                 ha, dec = await mount.get_ha_dec()
@@ -65,13 +69,15 @@ async def handle_input(mount):
             elif cmd == "slew":
                 if len(args) == 2:
                     ra_deg, dec_deg = float(args[0]), float(args[1])
-                    await mount.slew_mount_ra_dec(ra_deg, dec_deg)
+                    asyncio.create_task(mount.slew_mount_ra_dec(ra_deg, dec_deg))
+                    print(f"Slewing to RA: {ra_deg}, Dec: {dec_deg} in background...")
                 else:
                     print("Usage: slew <ra_deg> <dec_deg>")
             elif cmd == "slew_ha":
                 if len(args) == 2:
                     ha_deg, dec_deg = float(args[0]), float(args[1])
-                    await mount.slew_mount(ha_deg, dec_deg)
+                    asyncio.create_task(mount.slew_mount(ha_deg, dec_deg))
+                    print(f"Slewing to HA: {ha_deg}, Dec: {dec_deg} in background...")
                 else:
                     print("Usage: slew_ha <ha_deg> <dec_deg>")
             elif cmd == "track":
