@@ -401,6 +401,9 @@ class SchierMount():
         
         return ha_deg, dec_deg
 
+    async def get_status(self):
+        return self.state
+
     async def attempt_recovery(self):
         self.logger.info("Attempting servo and mount recovery...")
         try:
