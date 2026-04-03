@@ -1,0 +1,23 @@
+[tool.poetry]
+name = "schier-mount"
+version = "0.1.0"
+description = "A Python package and pyobs module to control the Schier Mount of the ROTSEIIIc Namibia Telescope"
+authors = ["Enzo Peres Afonso <you@example.com>"]
+readme = "README.md"
+packages = [{include = "schier_mount", from = "src"}]
+
+[tool.poetry.dependencies]
+python = "^3.10"
+astropy = "^6.0.0"
+pyserial = "^3.5"
+pyyaml = "^6.0.1"
+
+[tool.poetry.group.dev.dependencies]
+pytest = "^8.0.0"
+
+[tool.poetry.scripts]
+schier-mount-interactive = "schier_mount.interactive:run"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"

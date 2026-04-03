@@ -3,9 +3,9 @@ import logging
 import math
 from enum import Enum, auto
 
-from comm import MountComm
-from configuration import MountConfig
-from coordinates import MountCoordinates
+from .comm import MountComm
+from .configuration import MountConfig
+from .coordinates import MountCoordinates
 
 
 class MountState(Enum):

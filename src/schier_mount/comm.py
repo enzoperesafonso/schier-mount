@@ -1,8 +1,8 @@
 import logging
 import time
 import serial
-import crc
-from configuration import MountConfig
+from . import crc
+from .configuration import MountConfig
 
 
 # --- Custom Exceptions for Clarity ---

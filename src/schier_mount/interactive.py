@@ -1,7 +1,7 @@
 import asyncio
 import sys
 import logging
-from schier import SchierMount
+from .schier import SchierMount
 
 # Setup basic logging to console
 logging.basicConfig(
@@ -144,8 +144,12 @@ async def main():
     await handle_input(mount)
 
 
-if __name__ == "__main__":
+def run():
     try:
         asyncio.run(main())
     except KeyboardInterrupt:
         print("\nExiting...")
+
+
+if __name__ == "__main__":
+    run()
