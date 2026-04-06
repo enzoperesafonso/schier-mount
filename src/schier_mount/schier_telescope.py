@@ -47,6 +47,16 @@ class SchierTelescope(BaseTelescope, IPointingRaDec, IOffsetsRaDec, ICalibrate):
         await BaseTelescope.open(self)
 
 
+    async def _move_altaz(self, alt: float, az: float, abort_event: asyncio.Event) -> None:
+        pass
+
+    async def is_ready(self, **kwargs: Any) -> bool:
+        return True
+
+    async def stop_motion(self, device: Optional[str] = None, **kwargs: Any) -> None:
+        pass
+
+
     async def calibrate(self, **kwargs: Any) -> None:
         """
         Calibrate the mount i.e. home.
