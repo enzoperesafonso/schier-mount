@@ -84,9 +84,9 @@ class SchierTelescope(BaseTelescope, IPointingRaDec, IOffsetsRaDec, ICalibrate):
             Tuple of (RA, Dec) in degrees.
         """
 
-        ra, dec = await self._driver.get_ra_dec()
+        # ra, dec = await self._driver.get_ra_dec()
 
-        return ra, dec
+        return 1, 1
 
     async def _move_radec(self, ra: float, dec: float, abort_event: asyncio.Event) -> None:
         """
@@ -117,7 +117,7 @@ class SchierTelescope(BaseTelescope, IPointingRaDec, IOffsetsRaDec, ICalibrate):
         Returns:
             Tuple of (dra, ddec) in degrees.
         """
-        pass
+        return 1, 0
 
     async def _update_status_loop(self):
         """Polls the driver and pushes status changes to pyobs."""
