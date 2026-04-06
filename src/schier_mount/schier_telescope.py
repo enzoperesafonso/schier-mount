@@ -3,13 +3,14 @@ Pyobs module for controlling Schier mounts (ROTSEIIc).
 """
 import asyncio
 import logging
+from idlelib.window import add_windows_to_menu
 from typing import Any, Tuple, Optional
 from pyobs.modules.telescope import BaseTelescope
-from pyobs.interfaces import IPointingRaDec, IPointingAltAz, IOffsetsRaDec, ICalibrate, ISyncTarget
+from pyobs.interfaces import IPointingRaDec, IOffsetsRaDec, ICalibrate
 from pyobs.utils.enums import MotionStatus
 from pyobs.modules import timeout
 
-from schier import SchierMount, MountState
+from .schier import SchierMount, MountState
 
 MOUNT_STATE_MAPPING = {
     MountState.IDLE: MotionStatus.IDLE,
@@ -17,8 +18,8 @@ MOUNT_STATE_MAPPING = {
     MountState.TRACKING: MotionStatus.TRACKING,
     MountState.PARKING: MotionStatus.PARKING,
     MountState.PARKED: MotionStatus.PARKED,
-    MountState.HOMING: MotionStatus.INITIALIZING,
-    MountState.RECOVERING: MotionStatus.INITIALIZING,
+    MountState.HOMING: MotionStatus.CALIBRATING,
+    MountState.RECOVERING: MotionStatus.CALIBRATING,
     MountState.FAULT: MotionStatus.ERROR,
     MountState.UNKNOWN: MotionStatus.UNKNOWN
 }
@@ -26,9 +27,9 @@ MOUNT_STATE_MAPPING = {
 log = logging.getLogger(__name__)
 
 
-class SchierTelescope(BaseTelescope, IPointingRaDec, IOffsetsRaDec, ICalibrate, ISyncTarget):
+class SchierTelescope(BaseTelescope, IPointingRaDec, IOffsetsRaDec, ICalibrate):
     """
-    Custom Pyobs module for the ROTSEIIc Telescope Mounts.
+    Custom Pyobs module for the ROTSEIIc Telescope Mount.
 
     This class implements the pyobs telescope interfaces to communicate with
     the Schier mount driver, providing methods for pointing, offsetting,
@@ -38,30 +39,33 @@ class SchierTelescope(BaseTelescope, IPointingRaDec, IOffsetsRaDec, ICalibrate, 
     def __init__(self, **kwargs: Any):
         BaseTelescope.__init__(self, **kwargs, motion_status_interfaces=["ITelescope"])
 
+        self._driver = SchierMount()
+
         # Start a background task to keep pyobs updated
         self.add_background_task(self._update_status_loop)
 
     async def open(self) -> None:
         await BaseTelescope.open(self)
-        # Initialization logic for the driver should go here
+
 
     async def calibrate(self, **kwargs: Any) -> None:
         """
-        Calibrate the mount.
+        Calibrate the mount i.e. home.
         """
-        pass
+        await self._driver.home_mount()
 
     async def init(self, **kwargs: Any) -> None:
         """
         Unparks telescope NOT INITIALISES MOUNT... i.e. move out of parked status and slew to standby pos.
         """
-        pass
+        await self._driver.standby_mount()
 
     async def park(self, **kwargs: Any) -> None:
         """
         Park the telescope.
         """
-        pass
+        await self._driver.park_mount()
+
 
     async def get_radec(self, **kwargs: Any) -> Tuple[float, float]:
         """
@@ -70,7 +74,10 @@ class SchierTelescope(BaseTelescope, IPointingRaDec, IOffsetsRaDec, ICalibrate, 
         Returns:
             Tuple of (RA, Dec) in degrees.
         """
-        pass
+
+        ra, dec = await self._driver.get_ra_dec()
+
+        return ra, dec
 
     async def _move_radec(self, ra: float, dec: float, abort_event: asyncio.Event) -> None:
         """
@@ -79,7 +86,7 @@ class SchierTelescope(BaseTelescope, IPointingRaDec, IOffsetsRaDec, ICalibrate, 
         Args:
             ra: Right Ascension in degrees.
             dec: Declination in degrees.
-            abort_event: Event to signal movement abortion.
+            abort_event: Event to signal movement abort.
         """
         pass
 
@@ -93,6 +100,7 @@ class SchierTelescope(BaseTelescope, IPointingRaDec, IOffsetsRaDec, ICalibrate, 
         """
         pass
 
+
     async def get_offsets_radec(self, **kwargs: Any) -> Tuple[float, float]:
         """
         Get current RA and Dec offsets.
@@ -102,17 +110,11 @@ class SchierTelescope(BaseTelescope, IPointingRaDec, IOffsetsRaDec, ICalibrate, 
         """
         pass
 
-    async def sync_target(self, **kwargs: Any) -> None:
-        """
-        Sync the telescope to a target.
-        """
-        pass
-
     async def _update_status_loop(self):
         """Polls the driver and pushes status changes to pyobs."""
         while True:
             try:
-                # 1. Get state from your driver
+                # 1. Get state from driver
                 current_mount_state = self._driver.get_state()
 
                 # 2. Map to pyobs MotionStatus

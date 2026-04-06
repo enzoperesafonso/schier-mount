@@ -87,7 +87,7 @@ class SchierMount():
             self._move_task = asyncio.current_task()
 
             # Use safe_comm to send the init command to ensure we are in stop condition before homing!
-            await self._safe_comm(self.comm.init_mount())
+            await self._safe_comm(self.comm.init_mount)
 
             # give it a chance to get into stop ...
             await asyncio.sleep(5.0)
@@ -105,7 +105,7 @@ class SchierMount():
 
             self.logger.info("Homing sequence completed successfully.")
         except Exception as e:
-            logging.error(f"Failed to home mount: {e}")
+            self.logger.error(f"Failed to home mount: {e}")
         finally:
             self._move_task = None
 
@@ -158,7 +158,7 @@ class SchierMount():
             self.logger.info("Homing sequence completed successfully.")
 
         except Exception as e:
-            logging.error(f"Failed to park mount: {e}")
+            self.logger.error(f"Failed to park mount: {e}")
         finally:
             self._move_task = None
 
@@ -193,7 +193,7 @@ class SchierMount():
             self.logger.info("Mount moved to standby pos.")
 
         except Exception as e:
-            logging.error(f"Failed to move mount: {e}")
+            self.logger.error(f"Failed to move mount: {e}")
         finally:
             self._move_task = None
 
@@ -520,3 +520,6 @@ class SchierMount():
                         pass
 
             await asyncio.sleep(0.01)
+
+    def get_state(self):
+        return self.state

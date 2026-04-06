@@ -1,5 +1,6 @@
 import logging
 import time
+import re
 import serial
 from . import crc
 from .configuration import MountConfig
@@ -43,15 +44,15 @@ class MountComm:
     Args:
         port (str): The serial port to connect to (e.g., "/dev/ttyS0").
         baudrate (int): The baud rate for the serial communication.
-        config_file (str): Path to the configuration YAML file.
+        config (MountConfig, optional): Configuration object.
     """
 
-    def __init__(self, port: str = "/dev/ttyS0", baudrate=9600, config = MountConfig()):
+    def __init__(self, port: str = "/dev/ttyS0", baudrate=9600, config = None):
         """Initializes the MountComm object and opens the serial port."""
         self.logger = logging.getLogger("SchierMount")
 
         # Load Configuration
-        self.config = config
+        self.config = config if config is not None else MountConfig()
 
         self.serial = serial.Serial(port, baudrate, timeout=1.0)
 
@@ -679,10 +680,6 @@ class MountComm:
             # Cut: "@Status1Dec 1836177.0, 1836177.0 "
             body = response[:-4].strip()
 
-            # 2. Split using Regex
-            # This handles the specific format: Space-Numbe
-            # r-Comma-Space-Number
-            import re
             tokens = re.split(r'[ ,]+', body)
 
             # Result tokens: ['@Status1Dec', '1836177.0', '1836177.0']
