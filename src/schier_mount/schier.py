@@ -1,9 +1,8 @@
 import asyncio
 import logging
-import math
 from enum import Enum, auto
 
-from .comm import MountComm
+from .comm import MountComm, MountConnectionError
 from .configuration import MountConfig
 from .coordinates import MountCoordinates
 
@@ -19,7 +18,7 @@ class MountState(Enum):
     RECOVERING = auto()
     UNKNOWN = auto()
 
-class SchierMount():
+class SchierMount:
 
     def __init__(self):
 
@@ -467,7 +466,16 @@ class SchierMount():
     async def _safe_comm(self, func, *args, **kwargs):
         """Standard lock wrapper to prevent serial collision."""
         async with self.serial_lock:
-            return await asyncio.to_thread(func, *args, **kwargs)
+            try:
+                return await asyncio.to_thread(func, *args, **kwargs)
+            except MountConnectionError as e:
+                if self.state != MountState.FAULT:
+                    self.logger.critical(f"Communication failure in safe_comm: {e}")
+                    self.state = MountState.FAULT
+                raise
+            except Exception as e:
+                self.logger.error(f"Error in safe_comm: {e}")
+                raise
 
     async def _status_loop(self):
         while True:
@@ -517,9 +525,9 @@ class SchierMount():
                     try:
                         await self.stop_mount()
                     except:
-                        pass
+                        self.logger.error(f"How the heck did you get here?")
 
-            await asyncio.sleep(0.01)
+            await asyncio.sleep(0.1)
 
     def get_state(self):
         return self.state
