@@ -1,8 +1,9 @@
 import asyncio
 import logging
+import math
 from enum import Enum, auto
 
-from .comm import MountComm, MountConnectionError
+from .comm import MountComm
 from .configuration import MountConfig
 from .coordinates import MountCoordinates
 
@@ -18,7 +19,7 @@ class MountState(Enum):
     RECOVERING = auto()
     UNKNOWN = auto()
 
-class SchierMount:
+class SchierMount():
 
     def __init__(self):
 
@@ -525,9 +526,9 @@ class SchierMount:
                     try:
                         await self.stop_mount()
                     except:
-                        self.logger.error(f"How the heck did you get here?")
+                        pass
 
-            await asyncio.sleep(0.1)
+            await asyncio.sleep(0.2)
 
     def get_state(self):
         return self.state
