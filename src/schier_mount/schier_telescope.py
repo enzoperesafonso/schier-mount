@@ -3,7 +3,6 @@ Pyobs module for controlling Schier mounts (ROTSEIIc).
 """
 import asyncio
 import logging
-from idlelib.window import add_windows_to_menu
 from typing import Any, Tuple, Optional
 from pyobs.modules.telescope import BaseTelescope
 from pyobs.interfaces import IPointingRaDec, IOffsetsRaDec, ICalibrate
