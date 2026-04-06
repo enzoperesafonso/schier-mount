@@ -41,7 +41,7 @@ class SchierTelescope(BaseTelescope, IPointingRaDec, IOffsetsRaDec, ICalibrate):
         self._driver = SchierMount()
 
         # Start a background task to keep pyobs updated
-        self.add_background_task(self._update_status_loop)
+        # self.add_background_task(self._update_status_loop)
 
     async def open(self) -> None:
         await BaseTelescope.open(self)
@@ -144,7 +144,7 @@ class SchierTelescope(BaseTelescope, IPointingRaDec, IOffsetsRaDec, ICalibrate):
 
     async def get_motion_status(self, device: Optional[str] = None, **kwargs: Any) -> MotionStatus:
         """Required by IMotion interface: returns the current pyobs status."""
-        return await BaseTelescope.get_motion_status(self, device)
+        return MotionStatus.IDLE # await BaseTelescope.get_motion_status(self, device)
 
 
 __all__ = ["SchierTelescope"]
