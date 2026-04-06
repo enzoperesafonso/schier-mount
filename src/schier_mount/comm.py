@@ -106,38 +106,39 @@ class MountComm:
         self.logger.debug("Initiating the Mount!")
 
         try:
-
-
-            # reset mounts command parser!
-            #self._clear_comm()
-
             # zero the mount velocities
-
-            self._send_command("VelRa", 0)
+            self._send_command("VelRA", 0)
+            time.sleep(0.05)
             self._send_command("VelDec", 0)
+            time.sleep(0.05)
 
             # setup acceleration and max velocity using the config
-
             accel_ra = int(self.config.acceleration['slew_ra'] * self.config.encoder['steps_per_deg_ra'])
             accel_dec = int(self.config.acceleration['slew_dec'] * self.config.encoder['steps_per_deg_dec'])
 
-            self._send_command("AccelRa", accel_ra)
+            self._send_command("AccelRA", accel_ra)
+            time.sleep(0.05)
             self._send_command("AccelDec", accel_dec)
+            time.sleep(0.05)
 
             max_ra = int(self.config.speeds['max_ra'] * self.config.encoder['steps_per_deg_ra'])
             max_dec = int(self.config.speeds['max_dec'] * self.config.encoder['steps_per_deg_dec'])
 
             self._send_command("MaxVelRA", max_ra)
+            time.sleep(0.05)
             self._send_command("MaxVelDec", max_dec)
+            time.sleep(0.05)
 
             # we need to halt the mount to deactivate the amps, then stop to re-engage them!
             # need this to reset velocity curves but sketchy without physical breaks so beware ...
 
             self._send_command("HaltRA")
+            time.sleep(0.05)
             self._send_command("StopRA")
             time.sleep(0.2)
 
             self._send_command("HaltDec")
+            time.sleep(0.05)
             self._send_command("StopDec")
             time.sleep(0.2)
 
@@ -166,7 +167,7 @@ class MountComm:
                 raise MountError("Cannot home: Axis status error detected")
 
 
-            self._send_command("VelRa", self.config.speeds['home_ra'])
+            self._send_command("VelRA", self.config.speeds['home_ra'])
             self._send_command("VelDec", self.config.speeds['home_dec'])
 
             self._send_command("HomeRA",1)
@@ -188,7 +189,7 @@ class MountComm:
         try:
 
             # zero the velocities so the mount does not lurch after stop is released ...
-            self._send_command("VelRa", 0)
+            self._send_command("VelRA", 0)
             self._send_command("VelDec", 0)
 
             self._send_command("StopRA")
@@ -393,7 +394,7 @@ class MountComm:
 
             # Zero the Velocity Registers
 
-            self._send_command("VelRa", 0)
+            self._send_command("VelRA", 0)
             self._send_command("VelDec", 0)
 
             time.sleep(1.0)
@@ -437,7 +438,7 @@ class MountComm:
 
             # stop the mount before moving if requested
             if stop:
-                self._send_command("VelRa", 0)
+                self._send_command("VelRA", 0)
                 self._send_command("VelDec", 0)
 
             # check if ra is (as Rykoff puts it) kosher ...
@@ -461,7 +462,7 @@ class MountComm:
             self._send_command("PosDec", dec_enc)
 
             # set the velocities and away we go ...
-            self._send_command("VelRa", ra_vel)
+            self._send_command("VelRA", ra_vel)
             self._send_command("VelDec", dec_vel)
 
 
@@ -484,19 +485,16 @@ class MountComm:
             # 1. Dump any garbage currently in the input buffer
             self.serial.reset_input_buffer()
 
-            # 2. Send a Carriage Return to reset the mount computer's command parser
-            self.serial.write(b'\r')
-
-            # 3. Give the hardware a moment to process the CR
+            # 2. Give the hardware a moment to process any pending data
             time.sleep(0.1)
 
-            # 4. Read and discard whatever the mount sent back (usually a prompt or error)
+            # 3. Read and discard whatever the mount sent back
             junk = self.serial.read_all()
 
             if junk:
                 self.logger.debug(f"Discarded junk data: {junk}")
 
-            # 5. Ensure the input buffer is purely empty for the next real command
+            # 4. Ensure the input buffer is purely empty for the next real command
             self.serial.reset_input_buffer()
 
         except serial.SerialException as e:
