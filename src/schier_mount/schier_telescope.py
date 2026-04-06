@@ -17,8 +17,8 @@ MOUNT_STATE_MAPPING = {
     MountState.TRACKING: MotionStatus.TRACKING,
     MountState.PARKING: MotionStatus.PARKING,
     MountState.PARKED: MotionStatus.PARKED,
-    MountState.HOMING: MotionStatus.CALIBRATING,
-    MountState.RECOVERING: MotionStatus.CALIBRATING,
+    MountState.HOMING: MotionStatus.INITIALIZING,
+    MountState.RECOVERING: MotionStatus.INITIALIZING,
     MountState.FAULT: MotionStatus.ERROR,
     MountState.UNKNOWN: MotionStatus.UNKNOWN
 }
