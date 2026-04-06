@@ -3,7 +3,7 @@ import logging
 import math
 from enum import Enum, auto
 
-from .comm import MountComm
+from .comm import MountComm, MountConnectionError
 from .configuration import MountConfig
 from .coordinates import MountCoordinates
 

@@ -105,10 +105,11 @@ class SchierTelescope(BaseTelescope, IPointingRaDec, IOffsetsRaDec, ICalibrate, 
             # 1. Prepare and start the slew task
             log.info("Starting slew to RA=%.5f, Dec=%.5f", ra, dec)
             slew_task = asyncio.create_task(self._driver.slew_mount_ra_dec(ra, dec))
+            abort_task = asyncio.create_task(abort_event.wait())
 
             # 2. Wait for completion or abort
             done, pending = await asyncio.wait(
-                [slew_task, abort_event.wait()],
+                {slew_task, abort_task},
                 return_when=asyncio.FIRST_COMPLETED
             )
 
@@ -119,6 +120,9 @@ class SchierTelescope(BaseTelescope, IPointingRaDec, IOffsetsRaDec, ICalibrate, 
                 if not slew_task.done():
                     slew_task.cancel()
                 raise exc.AbortedError("Telescope move was aborted.")
+            else:
+                # Clean up abort task if slew finished first
+                abort_task.cancel()
 
             # 4. Handle move completion (re-raises any driver errors)
             await slew_task
